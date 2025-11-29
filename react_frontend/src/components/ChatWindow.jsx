@@ -33,6 +33,7 @@ export function ChatWindow({
   const analyserRef = useRef(null);
   const autoRestartTimerRef = useRef(null);
   const silenceCheckIntervalRef = useRef(null);
+  const isRecordingRef = useRef(false); // Use ref for reliable state checking in intervals
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -228,12 +229,14 @@ export function ChatWindow({
         }
         
         setIsRecording(false);
+        isRecordingRef.current = false;
       };
       
       mediaRecorder.onerror = (event) => {
         console.error("MediaRecorder error:", event);
         setRecordingError("Recording error occurred. Please try again.");
         setIsRecording(false);
+        isRecordingRef.current = false;
         if (streamRef.current) {
           streamRef.current.getTracks().forEach(track => track.stop());
           streamRef.current = null;
@@ -251,12 +254,26 @@ export function ChatWindow({
       // Start recording with timeslice for continuous mode (better for silence detection)
       if (continuousMode) {
         mediaRecorder.start(100); // Collect data every 100ms
-        startSilenceDetection();
+        setIsRecording(true);
+        isRecordingRef.current = true;
+        // Start silence detection after a short delay to ensure audio context is ready
+        setTimeout(() => {
+          if (isRecordingRef.current && continuousMode && analyserRef.current) {
+            console.log("Starting silence detection...");
+            startSilenceDetection();
+          } else {
+            console.log("Silence detection not started:", {
+              isRecording: isRecordingRef.current,
+              continuousMode,
+              hasAnalyser: !!analyserRef.current
+            });
+          }
+        }, 500); // Wait 500ms for everything to initialize
       } else {
         mediaRecorder.start();
+        setIsRecording(true);
+        isRecordingRef.current = true;
       }
-      
-      setIsRecording(true);
     } catch (err) {
       console.error("Error accessing microphone:", err);
       setRecordingError(
@@ -272,19 +289,30 @@ export function ChatWindow({
 
   // Silence detection function
   const startSilenceDetection = () => {
-    if (!analyserRef.current || !continuousMode || !isRecording) return;
+    if (!analyserRef.current) {
+      console.error("Analyser not available for silence detection");
+      return;
+    }
     
     // Clear any existing interval
     if (silenceCheckIntervalRef.current) {
       clearInterval(silenceCheckIntervalRef.current);
+      silenceCheckIntervalRef.current = null;
     }
     
     let silenceStartTime = null;
-    const SILENCE_THRESHOLD = 0.015; // Adjust this value (lower = more sensitive)
+    let hasDetectedSpeech = false;
+    let speechStartTime = null;
+    const SILENCE_THRESHOLD = 0.01; // Lower threshold for better sensitivity
     const SILENCE_DURATION = 1500; // 1.5 seconds of silence to stop
+    const MIN_SPEECH_DURATION = 200; // Minimum 200ms of speech
+    
+    console.log("Silence detection started with threshold:", SILENCE_THRESHOLD);
     
     silenceCheckIntervalRef.current = setInterval(() => {
-      if (!analyserRef.current || !isRecording || !continuousMode) {
+      // Use ref instead of state for reliable checking
+      if (!analyserRef.current || !isRecordingRef.current || !continuousMode) {
+        console.log("Stopping silence detection - conditions not met");
         if (silenceCheckIntervalRef.current) {
           clearInterval(silenceCheckIntervalRef.current);
           silenceCheckIntervalRef.current = null;
@@ -292,45 +320,83 @@ export function ChatWindow({
         return;
       }
       
-      const bufferLength = analyserRef.current.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-      analyserRef.current.getByteTimeDomainData(dataArray);
-      
-      // Calculate average volume
-      let sum = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        const normalized = (dataArray[i] - 128) / 128;
-        sum += Math.abs(normalized);
-      }
-      const average = sum / bufferLength;
-      
-      if (average < SILENCE_THRESHOLD) {
-        // Silence detected
-        if (silenceStartTime === null) {
-          silenceStartTime = Date.now();
+      try {
+        const bufferLength = analyserRef.current.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyserRef.current.getByteTimeDomainData(dataArray);
+        
+        // Calculate RMS volume
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const normalized = (dataArray[i] - 128) / 128;
+          sum += normalized * normalized;
+        }
+        const rms = Math.sqrt(sum / bufferLength);
+        
+        // Log volume occasionally for debugging (every 50 checks = ~5 seconds)
+        if (Math.random() < 0.02) {
+          console.log("Audio level:", rms.toFixed(4), "Threshold:", SILENCE_THRESHOLD);
+        }
+        
+        if (rms > SILENCE_THRESHOLD) {
+          // Sound detected
+          if (!hasDetectedSpeech) {
+            speechStartTime = Date.now();
+            hasDetectedSpeech = true;
+            console.log("Speech detected, starting to monitor for silence...");
+          }
+          silenceStartTime = null; // Reset silence timer
         } else {
-          const silenceDuration = Date.now() - silenceStartTime;
-          if (silenceDuration >= SILENCE_DURATION) {
-            // Stop recording after silence duration
-            if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-              mediaRecorderRef.current.stop();
+          // Silence detected
+          if (hasDetectedSpeech) {
+            const speechDuration = speechStartTime ? Date.now() - speechStartTime : 0;
+            
+            if (speechDuration >= MIN_SPEECH_DURATION) {
+              if (silenceStartTime === null) {
+                silenceStartTime = Date.now();
+                console.log("Silence started, waiting", SILENCE_DURATION, "ms...");
+              } else {
+                const silenceDuration = Date.now() - silenceStartTime;
+                if (silenceDuration >= SILENCE_DURATION) {
+                  // Stop recording after silence duration
+                  console.log("Silence duration reached, stopping recording...");
+                  
+                  // Clear interval first
+                  if (silenceCheckIntervalRef.current) {
+                    clearInterval(silenceCheckIntervalRef.current);
+                    silenceCheckIntervalRef.current = null;
+                  }
+                  
+                  // Stop the recorder
+                  if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+                    console.log("Calling mediaRecorder.stop()...");
+                    mediaRecorderRef.current.stop();
+                  } else {
+                    console.warn("MediaRecorder not in recording state:", mediaRecorderRef.current?.state);
+                  }
+                  
+                  silenceStartTime = null;
+                  hasDetectedSpeech = false;
+                  return; // Exit the interval
+                }
+              }
             }
-            silenceStartTime = null;
           }
         }
-      } else {
-        // Sound detected, reset silence timer
-        silenceStartTime = null;
+      } catch (err) {
+        console.error("Error in silence detection:", err);
       }
     }, 100); // Check every 100ms
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current && isRecordingRef.current) {
+      console.log("Manual stop recording called");
       if (mediaRecorderRef.current.state === "recording") {
         mediaRecorderRef.current.stop();
       }
       setIsRecording(false);
+      isRecordingRef.current = false;
       
       // Stop stream if still active
       if (streamRef.current) {
