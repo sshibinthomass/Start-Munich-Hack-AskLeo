@@ -4,7 +4,6 @@ These are additional tools that can be used alongside MCP server tools.
 Includes Gmail and Google Calendar management tools.
 """
 
-import math
 import os
 import json
 import imaplib
@@ -13,7 +12,7 @@ import email
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import decode_header
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 from langchain_core.tools import StructuredTool
 from google.oauth2.credentials import Credentials
@@ -39,38 +38,130 @@ def get_calendar_credentials():
     Authenticate and retrieve Google Calendar API credentials.
     
     This function handles the OAuth2 flow for Google Calendar API access.
-    It checks for existing credentials in 'calendar_token.json' and refreshes
-    them if expired. If no valid credentials exist, it initiates a new OAuth2
-    flow using the client secrets file.
-    
-    The function tries to start a local server on port 3001 first, and falls
-    back to port 8080 if that port is unavailable.
+    It first checks for existing credentials in 'calendar_token.json'.
+    Once authenticated, credentials are saved and reused automatically.
     
     Returns:
         Credentials: Google OAuth2 credentials object for Calendar API access
         
     Raises:
-        Exception: If OAuth2 flow fails or credentials file is missing
+        Exception: If credentials cannot be created
     """
     creds = None
-    if os.path.exists('calendar_token.json'):
-        creds = Credentials.from_authorized_user_file('calendar_token.json', CALENDAR_SCOPES)
     
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+    # Determine token file path (use backend directory)
+    backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+    token_file = os.path.join(backend_dir, 'calendar_token.json')
+    
+    # Try to load existing credentials
+    if os.path.exists(token_file):
+        try:
+            creds = Credentials.from_authorized_user_file(token_file, CALENDAR_SCOPES)
+        except Exception as e:
+            print(f"Warning: Could not load token file: {e}")
+            creds = None
+    
+    # Check if credentials are valid
+    if creds and creds.valid:
+        return creds
+    
+    # Try to refresh if expired
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            print("Refreshing expired credentials...")
             creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'client_secret_447640181348-pe428bqnghc4ee0ra031upncig6o7fnm.apps.googleusercontent.com.json',
-                CALENDAR_SCOPES
-            )
-            try:
-                creds = flow.run_local_server(port=3001, open_browser=True)
-            except OSError:
-                creds = flow.run_local_server(port=8080, open_browser=True)
+            # Save refreshed credentials
+            with open(token_file, 'w') as token:
+                token.write(creds.to_json())
+            return creds
+        except Exception as e:
+            print(f"Warning: Could not refresh token: {e}")
+            creds = None
+    
+    # Need to authenticate - look for client secret file or env vars
+    client_secret_file = 'client_secret_447640181348-pe428bqnghc4ee0ra031upncig6o7fnm.apps.googleusercontent.com.json'
+    
+    # Check in backend directory
+    client_secret_path = os.path.join(backend_dir, client_secret_file)
+    
+    if os.path.exists(client_secret_path):
+        print(f"Using client secret file: {client_secret_path}")
+        flow = InstalledAppFlow.from_client_secrets_file(
+            client_secret_path,
+            CALENDAR_SCOPES
+        )
+    else:
+        # Try to create from environment variables
+        client_id = os.getenv('GOOGLE_OAUTH_CLIENT_ID')
+        client_secret = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET')
         
-        with open('calendar_token.json', 'w') as token:
-            token.write(creds.to_json())
+        if client_id and client_secret:
+            print("Using credentials from environment variables...")
+            client_config = {
+                "installed": {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": ["http://localhost:3001/", "urn:ietf:wg:oauth:2.0:oob"]
+                }
+            }
+            flow = InstalledAppFlow.from_client_config(client_config, CALENDAR_SCOPES)
+        else:
+            raise FileNotFoundError(
+                f"Google OAuth credentials not found. Please either:\n"
+                f"1. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in .env file, OR\n"
+                f"2. Place client secret JSON in: {client_secret_path}"
+            )
+    
+    # Run OAuth flow (this will open browser ONCE)
+    print("\n" + "="*80)
+    print("🔐 FIRST TIME SETUP - Google Calendar Authentication")
+    print("="*80)
+    print("A browser window will open for you to authorize access.")
+    print("After authorization, credentials will be saved and reused automatically.")
+    print("You won't need to do this again unless you revoke access.")
+    print("="*80 + "\n")
+    
+    try:
+        # Try with port 3001 first
+        try:
+            creds = flow.run_local_server(
+                port=3001, 
+                open_browser=True,
+                access_type='offline',
+                prompt='consent',
+                success_message='Authorization successful! You can close this window.',
+                bind_addr='127.0.0.1'
+            )
+        except Exception as e:
+            print(f"Port 3001 failed, trying 8080... Error: {e}")
+            # Fallback to port 8080
+            creds = flow.run_local_server(
+                port=8080, 
+                open_browser=True,
+                access_type='offline',
+                prompt='consent',
+                success_message='Authorization successful! You can close this window.',
+                bind_addr='127.0.0.1'
+            )
+    except Exception as e:
+        print(f"\n❌ OAuth flow failed: {e}")
+        print("\nTrying alternative method...")
+        # If local server fails, use console flow
+        auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
+        print(f"\nPlease visit this URL to authorize:\n{auth_url}\n")
+        code = input("Enter the authorization code: ")
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+    
+    # Save token for future use
+    with open(token_file, 'w') as token:
+        token.write(creds.to_json())
+    
+    print("\n✅ Authentication successful! Credentials saved.")
+    print(f"Token saved to: {token_file}")
+    print("You won't need to authenticate again.\n")
     
     return creds
 
@@ -426,7 +517,9 @@ def create_event(summary: str, start_time: str, end_time: str, description: str 
         result = service.events().insert(calendarId='primary', body=event).execute()
         return f"✅ Event created! Link: {result.get('htmlLink')}"
     except Exception as e:
-        return f"❌ Error creating event: {str(e)}"
+        import traceback
+        error_details = traceback.format_exc()
+        return f"❌ Error creating event: {str(e)}\n\nDetails:\n{error_details}"
 
 
 def list_events(max_results: int = 10, days_ahead: int = 30):
@@ -453,8 +546,8 @@ def list_events(max_results: int = 10, days_ahead: int = 30):
         creds = get_calendar_credentials()
         service = build('calendar', 'v3', credentials=creds)
         
-        now = datetime.utcnow().isoformat() + 'Z'
-        time_max = (datetime.utcnow() + timedelta(days=days_ahead)).isoformat() + 'Z'
+        now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        time_max = (datetime.now(timezone.utc) + timedelta(days=days_ahead)).isoformat().replace('+00:00', 'Z')
         
         results = service.events().list(
             calendarId='primary',
@@ -483,7 +576,9 @@ def list_events(max_results: int = 10, days_ahead: int = 30):
         
         return json.dumps(event_list, indent=2)
     except Exception as e:
-        return f"❌ Error listing events: {str(e)}"
+        import traceback
+        error_details = traceback.format_exc()
+        return f"❌ Error listing events: {str(e)}\n\nDetails:\n{error_details}"
 
 
 def delete_event(event_id: str):
@@ -511,119 +606,7 @@ def delete_event(event_id: str):
         return f"❌ Error: {str(e)}"
 
 
-# ==================== CALCULATION TOOLS ====================
-
-def add(a: float, b: float) -> float:
-    """Add two numbers.
-
-    Args:
-        a: first number
-        b: second number
-    """
-    return a + b
-
-
-def subtract(a: float, b: float) -> float:
-    """Subtract b from a.
-
-    Args:
-        a: first number (minuend)
-        b: second number (subtrahend)
-    """
-    return a - b
-
-
-def multiply(a: float, b: float) -> float:
-    """Multiply two numbers.
-
-    Args:
-        a: first number
-        b: second number
-    """
-    return a * b
-
-
-def divide(a: float, b: float) -> float:
-    """Divide a by b.
-
-    Args:
-        a: dividend
-        b: divisor (must not be zero)
-    """
-    if b == 0:
-        raise ValueError("Division by zero is not allowed")
-    return a / b
-
-
-def power(base: float, exponent: float) -> float:
-    """Raise base to the power of exponent.
-
-    Args:
-        base: the base number
-        exponent: the exponent
-    """
-    return base**exponent
-
-
-def square_root(x: float) -> float:
-    """Calculate the square root of a number.
-
-    Args:
-        x: the number (must be non-negative)
-    """
-    if x < 0:
-        raise ValueError("Square root of negative number is not allowed")
-    return math.sqrt(x)
-
-
-def modulo(a: float, b: float) -> float:
-    """Calculate the remainder when a is divided by b.
-
-    Args:
-        a: dividend
-        b: divisor (must not be zero)
-    """
-    if b == 0:
-        raise ValueError("Modulo by zero is not allowed")
-    return a % b
-
-
-def absolute_value(x: float) -> float:
-    """Calculate the absolute value of a number.
-
-    Args:
-        x: the number
-    """
-    return abs(x)
-
-
-def get_multiply_tool() -> StructuredTool:
-    """
-    Get the multiply tool as a LangChain StructuredTool.
-
-    Returns:
-        StructuredTool: The multiply tool ready to be added to the tool list
-    """
-    return StructuredTool.from_function(multiply)
-
-
-def get_all_calculation_tools() -> List[StructuredTool]:
-    """
-    Get all calculation tools as LangChain StructuredTools.
-
-    Returns:
-        List[StructuredTool]: List of all calculation tools ready to be added to the tool list
-    """
-    return [
-        StructuredTool.from_function(add),
-        StructuredTool.from_function(subtract),
-        StructuredTool.from_function(multiply),
-        StructuredTool.from_function(divide),
-        StructuredTool.from_function(power),
-        StructuredTool.from_function(square_root),
-        StructuredTool.from_function(modulo),
-        StructuredTool.from_function(absolute_value),
-    ]
+# ==================== TOOL GETTERS ====================
 
 
 def get_all_gmail_tools() -> List[StructuredTool]:
@@ -658,14 +641,58 @@ def get_all_calendar_tools() -> List[StructuredTool]:
 
 def get_all_tools() -> List[StructuredTool]:
     """
-    Get all available tools (calculation, Gmail, and Calendar) as LangChain StructuredTools.
+    Get all available tools (Gmail and Calendar) as LangChain StructuredTools.
 
     Returns:
         List[StructuredTool]: List of all tools ready to be added to the tool list
     """
     return (
-        get_all_calculation_tools() +
         get_all_gmail_tools() +
         get_all_calendar_tools()
     )
+
+
+if __name__ == "__main__":
+    """
+    Test the custom tools independently.
+    You can modify the test cases below to test different functionalities.
+    """
+    print("=" * 80)
+    print("Testing Custom Tools - Gmail and Calendar")
+    print("=" * 80)
+    
+    # Test getting all tools
+    print("\n📋 Loading all tools...")
+    all_tools = get_all_tools()
+    print(f"✅ Loaded {len(all_tools)} tools:")
+    for i, tool in enumerate(all_tools, 1):
+        print(f"  {i}. {tool.name}: {tool.description}")
+    
+    print("\n" + "=" * 80)
+    print("Gmail Tools Test")
+    print("=" * 80)
+    
+    # Test Gmail tools
+    print("\n📧 Testing list_emails (last 3 emails)...")
+    try:
+        result = list_emails(limit=3)
+        print(result)
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    
+    print("\n" + "=" * 80)
+    print("Calendar Tools Test")
+    print("=" * 80)
+    
+    # Test Calendar tools
+    print("\n📅 Testing list_events (next 5 events)...")
+    try:
+        result = list_events(max_results=5, days_ahead=30)
+        print(result)
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    
+    print("\n" + "=" * 80)
+    print("Test completed!")
+    print("=" * 80)
 

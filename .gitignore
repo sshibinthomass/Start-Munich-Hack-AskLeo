@@ -16,6 +16,11 @@ env/
 **/*.env
 !**/example.env
 
+# Google OAuth credentials and tokens
+**/client_secret*.json
+**/calendar_token.json
+calendar_token.json
+
 # Node.js / React
 node_modules/
 dist/

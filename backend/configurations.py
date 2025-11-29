@@ -5,8 +5,6 @@ class MCPConfiguration(BaseSettings):
     model_config = SettingsConfigDict(env_nested_delimiter="__")
 
     mcp_chatbot_node_config: list[str] = [
-        "subtract",
-        "multiply",
         "search",
         "fetch_content",
         "get_me",
@@ -23,7 +21,17 @@ class MCPConfiguration(BaseSettings):
         "directory_tree",
         "move_file",
         "search_files",
-        "get_file_info"
+        "get_file_info",
+        # Gmail tools
+        "send_email",
+        "list_emails",
+        "read_email",
+        "search_emails",
+        "reply_to_email",
+        # Calendar tools
+        "create_event",
+        "list_events",
+        "delete_event"
     ]
 
 
