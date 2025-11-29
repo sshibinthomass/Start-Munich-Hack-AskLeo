@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 import tempfile
 import openai
+from elevenlabs.client import ElevenLabs
 
 # Add project root to path
 current_file = Path(__file__).resolve()
@@ -534,6 +535,105 @@ async def reset_chat(request: ResetChatRequest):
     session_store.pop(session_key, None)
     clear_tool_status(session_key)
     return {"status": "success"}
+
+
+class TTSRequest(BaseModel):
+    text: str
+    voice_id: Optional[str] = "21m00Tcm4TlvDq8ikWAM"  # Default: Rachel voice
+    model_id: Optional[str] = "eleven_turbo_v2_5"  # Fast model for streaming
+    stability: Optional[float] = 0.5
+    similarity_boost: Optional[float] = 0.75
+
+
+@app.post("/tts")
+async def text_to_speech(request: TTSRequest):
+    """
+    Convert text to speech using ElevenLabs API.
+    Returns streaming audio data.
+    """
+    elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not elevenlabs_api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="ELEVENLABS_API_KEY not configured. Please set it in your .env file.",
+        )
+
+    try:
+        # Initialize ElevenLabs client
+        client = ElevenLabs(api_key=elevenlabs_api_key)
+
+        # Use the text_to_speech.convert method which returns a generator
+        # Note: The convert method streams audio chunks
+        audio_generator = client.text_to_speech.convert(
+            voice_id=request.voice_id,
+            text=request.text,
+            model_id=request.model_id,
+            voice_settings={
+                "stability": request.stability,
+                "similarity_boost": request.similarity_boost,
+            },
+        )
+
+        # Check if it's actually a generator/iterable
+        if not hasattr(audio_generator, "__iter__"):
+            raise ValueError("Audio generator is not iterable")
+
+        async def stream_audio():
+            try:
+                # Iterate through the generator
+                for chunk in audio_generator:
+                    # The chunks from ElevenLabs are typically bytes
+                    if chunk:
+                        # If it's already bytes, yield directly
+                        if isinstance(chunk, bytes):
+                            yield chunk
+                        # If it's a response object with data, extract it
+                        elif hasattr(chunk, "chunk") and chunk.chunk:
+                            yield chunk.chunk
+                        elif hasattr(chunk, "data") and chunk.data:
+                            yield chunk.data
+                        # Try to get bytes from the chunk
+                        else:
+                            try:
+                                chunk_bytes = (
+                                    bytes(chunk)
+                                    if not isinstance(chunk, bytes)
+                                    else chunk
+                                )
+                                if chunk_bytes:
+                                    yield chunk_bytes
+                            except (TypeError, ValueError):
+                                # If we can't convert, try string representation
+                                if isinstance(chunk, str):
+                                    yield chunk.encode("utf-8")
+            except Exception as stream_error:
+                import traceback
+
+                error_trace = traceback.format_exc()
+                print(f"Error in audio stream: {stream_error}")
+                print(error_trace)
+                # Re-raise to be caught by outer exception handler
+                raise
+
+        return StreamingResponse(
+            stream_audio(),
+            media_type="audio/mpeg",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+
+    except Exception as e:
+        import traceback
+
+        error_details = traceback.format_exc()
+        print(f"ElevenLabs TTS Error: {error_details}")
+        # Return more detailed error for debugging
+        error_message = f"Error generating speech: {str(e)}"
+        if hasattr(e, "__class__"):
+            error_message += f" (Type: {e.__class__.__name__})"
+        raise HTTPException(status_code=500, detail=error_message)
 
 
 @app.post("/transcribe")

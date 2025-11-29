@@ -14,6 +14,9 @@ export function ChatWindow({
   toolCallHistory = [],
   toolStatusComplete = true,
   backendUrl = "http://localhost:8000",
+  voiceOutputEnabled = false,
+  onVoiceOutputToggle = null,
+  isAudioPlaying = false,
 }) {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -21,9 +24,15 @@ export function ChatWindow({
   const [expandedToolIndex, setExpandedToolIndex] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingError, setRecordingError] = useState("");
+  const [continuousMode, setContinuousMode] = useState(false);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const streamRef = useRef(null);
+  const silenceTimerRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const autoRestartTimerRef = useRef(null);
+  const silenceCheckIntervalRef = useRef(null);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -114,11 +123,26 @@ export function ChatWindow({
     setExpandedToolIndex((prev) => (prev === index ? null : index));
   };
 
-  const startRecording = async () => {
+  const startRecording = async (autoStart = false) => {
     try {
       setRecordingError("");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      
+      // Set up audio analysis for silence detection (only in continuous mode)
+      if (continuousMode) {
+        try {
+          audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+          analyserRef.current = audioContextRef.current.createAnalyser();
+          analyserRef.current.fftSize = 2048;
+          analyserRef.current.smoothingTimeConstant = 0.8;
+          const source = audioContextRef.current.createMediaStreamSource(stream);
+          source.connect(analyserRef.current);
+        } catch (audioErr) {
+          console.warn("Audio context setup failed:", audioErr);
+          // Continue without silence detection if audio context fails
+        }
+      }
       
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: MediaRecorder.isTypeSupported("audio/webm") 
@@ -148,43 +172,62 @@ export function ChatWindow({
           streamRef.current = null;
         }
         
-        // Send to backend for transcription
-        const formData = new FormData();
-        formData.append("audio", audioBlob, "recording.webm");
-        
-        try {
-          const response = await fetch(`${backendUrl}/transcribe`, {
-            method: "POST",
-            body: formData,
-          });
-          
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ detail: "Transcription failed" }));
-            throw new Error(errorData.detail || `Server error: ${response.status}`);
+        // Clean up audio context
+        if (audioContextRef.current) {
+          try {
+            audioContextRef.current.close();
+          } catch (e) {
+            // Ignore errors when closing
           }
-          
-          const data = await response.json();
-          if (data.text && data.text.trim()) {
-            const transcribedText = data.text.trim();
-            // Set the transcribed text in the input field
-            if (inputRef.current) {
-              inputRef.current.value = transcribedText;
-            }
-            // Automatically submit the transcribed message
-            onSubmit(transcribedText);
-            // Clear the input field after submission (same as handleSubmit does)
-            if (inputRef.current) {
-              inputRef.current.value = "";
-            }
-          } else {
-            setRecordingError("No speech detected. Please try again.");
-          }
-        } catch (err) {
-          console.error("Transcription error:", err);
-          setRecordingError(err.message || "Failed to transcribe audio. Please try again.");
-        } finally {
-          setIsRecording(false);
+          audioContextRef.current = null;
+          analyserRef.current = null;
         }
+        
+        // Clear silence detection timers
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = null;
+        }
+        if (silenceCheckIntervalRef.current) {
+          clearInterval(silenceCheckIntervalRef.current);
+          silenceCheckIntervalRef.current = null;
+        }
+        
+        // Only process if we have audio chunks and blob has content
+        if (audioChunksRef.current.length > 0 && audioBlob.size > 0) {
+          // Send to backend for transcription
+          const formData = new FormData();
+          formData.append("audio", audioBlob, "recording.webm");
+          
+          try {
+            const response = await fetch(`${backendUrl}/transcribe`, {
+              method: "POST",
+              body: formData,
+            });
+            
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ detail: "Transcription failed" }));
+              throw new Error(errorData.detail || `Server error: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            if (data.text && data.text.trim()) {
+              const transcribedText = data.text.trim();
+              // Automatically submit the transcribed message
+              onSubmit(transcribedText);
+              // In continuous mode, auto-restart will happen after response completes
+            } else if (!autoStart && !continuousMode) {
+              setRecordingError("No speech detected. Please try again.");
+            }
+          } catch (err) {
+            console.error("Transcription error:", err);
+            if (!autoStart && !continuousMode) {
+              setRecordingError(err.message || "Failed to transcribe audio. Please try again.");
+            }
+          }
+        }
+        
+        setIsRecording(false);
       };
       
       mediaRecorder.onerror = (event) => {
@@ -195,9 +238,24 @@ export function ChatWindow({
           streamRef.current.getTracks().forEach(track => track.stop());
           streamRef.current = null;
         }
+        // Clean up audio context
+        if (audioContextRef.current) {
+          try {
+            audioContextRef.current.close();
+          } catch (e) {}
+          audioContextRef.current = null;
+          analyserRef.current = null;
+        }
       };
       
-      mediaRecorder.start();
+      // Start recording with timeslice for continuous mode (better for silence detection)
+      if (continuousMode) {
+        mediaRecorder.start(100); // Collect data every 100ms
+        startSilenceDetection();
+      } else {
+        mediaRecorder.start();
+      }
+      
       setIsRecording(true);
     } catch (err) {
       console.error("Error accessing microphone:", err);
@@ -212,6 +270,61 @@ export function ChatWindow({
     }
   };
 
+  // Silence detection function
+  const startSilenceDetection = () => {
+    if (!analyserRef.current || !continuousMode || !isRecording) return;
+    
+    // Clear any existing interval
+    if (silenceCheckIntervalRef.current) {
+      clearInterval(silenceCheckIntervalRef.current);
+    }
+    
+    let silenceStartTime = null;
+    const SILENCE_THRESHOLD = 0.015; // Adjust this value (lower = more sensitive)
+    const SILENCE_DURATION = 1500; // 1.5 seconds of silence to stop
+    
+    silenceCheckIntervalRef.current = setInterval(() => {
+      if (!analyserRef.current || !isRecording || !continuousMode) {
+        if (silenceCheckIntervalRef.current) {
+          clearInterval(silenceCheckIntervalRef.current);
+          silenceCheckIntervalRef.current = null;
+        }
+        return;
+      }
+      
+      const bufferLength = analyserRef.current.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      analyserRef.current.getByteTimeDomainData(dataArray);
+      
+      // Calculate average volume
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const normalized = (dataArray[i] - 128) / 128;
+        sum += Math.abs(normalized);
+      }
+      const average = sum / bufferLength;
+      
+      if (average < SILENCE_THRESHOLD) {
+        // Silence detected
+        if (silenceStartTime === null) {
+          silenceStartTime = Date.now();
+        } else {
+          const silenceDuration = Date.now() - silenceStartTime;
+          if (silenceDuration >= SILENCE_DURATION) {
+            // Stop recording after silence duration
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+              mediaRecorderRef.current.stop();
+            }
+            silenceStartTime = null;
+          }
+        }
+      } else {
+        // Sound detected, reset silence timer
+        silenceStartTime = null;
+      }
+    }, 100); // Check every 100ms
+  };
+
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       if (mediaRecorderRef.current.state === "recording") {
@@ -224,6 +337,27 @@ export function ChatWindow({
         streamRef.current.getTracks().forEach(track => track.stop());
         streamRef.current = null;
       }
+      
+      // Clean up audio context
+      if (audioContextRef.current) {
+        try {
+          audioContextRef.current.close();
+        } catch (e) {
+          // Ignore errors
+        }
+        audioContextRef.current = null;
+        analyserRef.current = null;
+      }
+      
+      // Clear timers
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      if (silenceCheckIntervalRef.current) {
+        clearInterval(silenceCheckIntervalRef.current);
+        silenceCheckIntervalRef.current = null;
+      }
     }
   };
 
@@ -235,6 +369,26 @@ export function ChatWindow({
     }
   };
 
+  // Auto-restart recording after response completes (in continuous mode)
+  // But only if audio is not playing
+  useEffect(() => {
+    if (continuousMode && !loading && !isRecording && !resetting && !isAudioPlaying) {
+      // Wait a brief moment before restarting to allow UI to update
+      autoRestartTimerRef.current = setTimeout(() => {
+        if (continuousMode && !loading && !isRecording && !resetting && !isAudioPlaying) {
+          startRecording(true);
+        }
+      }, 800); // 800ms delay after response completes
+    }
+    
+    return () => {
+      if (autoRestartTimerRef.current) {
+        clearTimeout(autoRestartTimerRef.current);
+        autoRestartTimerRef.current = null;
+      }
+    };
+  }, [loading, continuousMode, isRecording, resetting, isAudioPlaying]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -243,6 +397,20 @@ export function ChatWindow({
       }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         mediaRecorderRef.current.stop();
+      }
+      if (audioContextRef.current) {
+        try {
+          audioContextRef.current.close();
+        } catch (e) {}
+      }
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+      }
+      if (silenceCheckIntervalRef.current) {
+        clearInterval(silenceCheckIntervalRef.current);
+      }
+      if (autoRestartTimerRef.current) {
+        clearTimeout(autoRestartTimerRef.current);
       }
     };
   }, []);
@@ -383,17 +551,105 @@ export function ChatWindow({
         <form className="chat-form" onSubmit={handleSubmit}>
           <input
             className="chat-input"
-            placeholder="Type your message…"
-            disabled={resetting || isRecording}
+            placeholder={
+              isAudioPlaying
+                ? "Agent is speaking..."
+                : continuousMode
+                ? "Continuous mode: Speak naturally..."
+                : "Type your message…"
+            }
+            disabled={resetting || (isRecording && continuousMode) || isAudioPlaying}
             ref={inputRef}
           />
+          {onVoiceOutputToggle && (
+            <button
+              type="button"
+              className={`chat-button-tts ${voiceOutputEnabled ? "chat-button-tts--active" : ""}`}
+              onClick={onVoiceOutputToggle}
+              disabled={loading || resetting || isAudioPlaying}
+              title={voiceOutputEnabled ? "Disable voice output" : "Enable voice output (ElevenLabs)"}
+              aria-label={voiceOutputEnabled ? "Disable voice output" : "Enable voice output"}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M3 9V15H7L12 20V4L7 9H3ZM16.5 12C16.5 10.23 15.48 8.71 14.5 7.97V16.02C15.48 15.29 16.5 13.77 16.5 12ZM14.5 3.13V5.29C16.89 6.15 18.5 8.83 18.5 12C18.5 15.17 16.89 17.85 14.5 18.71V20.87C18.01 19.93 20.5 16.35 20.5 12C20.5 7.65 18.01 4.07 14.5 3.13Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+          )}
+          <button
+            type="button"
+            className={`chat-button-continuous ${continuousMode ? "chat-button-continuous--active" : ""}`}
+            onClick={() => {
+              if (!continuousMode) {
+                setContinuousMode(true);
+                if (!isRecording && !loading && !isAudioPlaying) {
+                  startRecording(true);
+                }
+              } else {
+                setContinuousMode(false);
+                if (isRecording) {
+                  stopRecording();
+                }
+              }
+            }}
+            disabled={loading || resetting || isAudioPlaying}
+            title={
+              isAudioPlaying
+                ? "Wait for audio to finish"
+                : continuousMode
+                ? "Disable continuous mode"
+                : "Enable continuous voice conversation"
+            }
+            aria-label={
+              isAudioPlaying
+                ? "Wait for audio to finish"
+                : continuousMode
+                ? "Disable continuous mode"
+                : "Enable continuous voice conversation"
+            }
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20Z"
+                fill="currentColor"
+              />
+              {continuousMode && (
+                <path
+                  d="M12 6C8.69 6 6 8.69 6 12C6 15.31 8.69 18 12 18C15.31 18 18 15.31 18 12C18 8.69 15.31 6 12 6Z"
+                  fill="currentColor"
+                />
+              )}
+            </svg>
+          </button>
           <button
             type="button"
             className={`chat-button-voice ${isRecording ? "chat-button-voice--recording" : ""}`}
             onClick={toggleRecording}
-            disabled={loading || resetting}
+            disabled={loading || resetting || continuousMode || isAudioPlaying}
             aria-label={isRecording ? "Stop recording" : "Start voice input"}
-            title={isRecording ? "Stop recording" : "Start voice input"}
+            title={
+              isAudioPlaying
+                ? "Wait for audio to finish"
+                : continuousMode
+                ? "Recording automatically"
+                : isRecording
+                ? "Stop recording"
+                : "Start voice input"
+            }
           >
             {isRecording ? (
               <svg
@@ -440,7 +696,7 @@ export function ChatWindow({
           <button
             type="submit"
             className="chat-button"
-            disabled={loading || resetting || isRecording}
+            disabled={loading || resetting || isRecording || isAudioPlaying}
           >
             Send
           </button>

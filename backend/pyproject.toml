@@ -26,6 +26,7 @@ dependencies = [
     "jupyter>=1.1.1",
     "ipykernel>=7.1.0",
     "openai>=1.0.0",
+    "elevenlabs>=1.0.0",
 ]
 
 [dependency-groups]

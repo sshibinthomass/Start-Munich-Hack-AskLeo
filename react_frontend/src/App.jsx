@@ -24,6 +24,12 @@ export default function App() {
   const [latestToolCall, setLatestToolCall] = useState(null);
   const [toolCallHistory, setToolCallHistory] = useState([]);
   const [toolStatusComplete, setToolStatusComplete] = useState(true);
+  const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(false);
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const audioQueueRef = useRef([]);
+  const currentAudioRef = useRef(null);
+  const textBufferRef = useRef("");
+  const isPlayingRef = useRef(false);
 
   const normalizeToolEntry = (entry) => {
     if (!entry) return null;
@@ -203,6 +209,154 @@ export default function App() {
   };
 
 
+  // Function to process text chunks for TTS
+  const processTextForTTS = (newText) => {
+    if (!voiceOutputEnabled) return;
+    
+    textBufferRef.current += newText;
+    
+    // Split by sentence endings (., !, ?, followed by space or end)
+    const sentenceEndRegex = /([.!?])\s+/g;
+    const sentences = [];
+    let lastIndex = 0;
+    let match;
+    
+    while ((match = sentenceEndRegex.exec(textBufferRef.current)) !== null) {
+      const sentence = textBufferRef.current.substring(lastIndex, match.index + 1).trim();
+      if (sentence.length > 0) {
+        sentences.push(sentence);
+      }
+      lastIndex = match.index + match[0].length;
+    }
+    
+    // If we found complete sentences, process them
+    if (sentences.length > 0) {
+      // Update buffer to keep remaining text
+      textBufferRef.current = textBufferRef.current.substring(lastIndex);
+      
+      // Queue each sentence for TTS
+      sentences.forEach((sentence) => {
+        if (sentence.length > 0) {
+          queueAudioForText(sentence);
+        }
+      });
+    }
+  };
+
+  // Function to queue audio for text
+  const queueAudioForText = async (text) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: text,
+          model_id: "eleven_turbo_v2_5", // Fast model for streaming
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("TTS request failed:", response.status);
+        return;
+      }
+
+      // Convert response to blob and create audio URL
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      // Add to queue
+      audioQueueRef.current.push(audioUrl);
+      
+      // Start playing if not already playing
+      if (!isPlayingRef.current) {
+        playNextAudio();
+      }
+    } catch (err) {
+      console.error("Error generating TTS:", err);
+    }
+  };
+
+  // Function to play next audio in queue
+  const playNextAudio = () => {
+    if (audioQueueRef.current.length === 0) {
+      isPlayingRef.current = false;
+      setIsAudioPlaying(false);
+      return;
+    }
+
+    isPlayingRef.current = true;
+    setIsAudioPlaying(true);
+    const audioUrl = audioQueueRef.current.shift();
+    
+    const audio = new Audio(audioUrl);
+    currentAudioRef.current = audio;
+    
+    audio.onended = () => {
+      URL.revokeObjectURL(audioUrl);
+      playNextAudio(); // Play next in queue
+    };
+    
+    audio.onerror = () => {
+      console.error("Audio playback error");
+      URL.revokeObjectURL(audioUrl);
+      isPlayingRef.current = false;
+      setIsAudioPlaying(false);
+      playNextAudio(); // Try next
+    };
+    
+    audio.onpause = () => {
+      // If audio is paused (not ended), update state
+      if (audioQueueRef.current.length === 0 && !audio.ended) {
+        isPlayingRef.current = false;
+        setIsAudioPlaying(false);
+      }
+    };
+    
+    audio.play().catch((err) => {
+      console.error("Error playing audio:", err);
+      URL.revokeObjectURL(audioUrl);
+      isPlayingRef.current = false;
+      setIsAudioPlaying(false);
+      playNextAudio();
+    });
+  };
+
+  // Cleanup audio on unmount or when voice output is disabled
+  useEffect(() => {
+    return () => {
+      // Stop current audio
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+      
+      // Clean up queued audio URLs
+      audioQueueRef.current.forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
+      audioQueueRef.current = [];
+      isPlayingRef.current = false;
+      textBufferRef.current = "";
+    };
+  }, []);
+
+  // Stop audio when voice output is disabled
+  useEffect(() => {
+    if (!voiceOutputEnabled) {
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+      audioQueueRef.current.forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
+      audioQueueRef.current = [];
+      isPlayingRef.current = false;
+      setIsAudioPlaying(false);
+      textBufferRef.current = "";
+    }
+  }, [voiceOutputEnabled]);
+
   async function handleSubmitMessage(content) {
     setError("");
 
@@ -219,6 +373,9 @@ export default function App() {
     setLatestToolCall(null);
     setToolCallHistory([]);
     setToolStatusComplete(false);
+    
+    // Reset text buffer for new response
+    textBufferRef.current = "";
 
     // Add empty bot message that we'll update as chunks arrive
     setConversation((prev) => [
@@ -279,6 +436,11 @@ export default function App() {
                   }
                   return updated;
                 });
+                
+                // Process chunk for TTS if voice output is enabled
+                if (voiceOutputEnabled) {
+                  processTextForTTS(data.content);
+                }
               } else if (data.type === "done") {
                 const normalizedCalls = normalizeToolEntries(data?.tool_calls);
                 setToolCallHistory(normalizedCalls);
@@ -287,6 +449,12 @@ export default function App() {
                   (normalizedCalls.length ? normalizedCalls[normalizedCalls.length - 1] : null);
                 setLatestToolCall(latest);
                 setToolStatusComplete(true);
+                
+                // Process any remaining text in buffer for TTS
+                if (voiceOutputEnabled && textBufferRef.current.trim().length > 0) {
+                  queueAudioForText(textBufferRef.current.trim());
+                  textBufferRef.current = "";
+                }
               } else if (data.type === "error") {
                 throw new Error(data.error || "Unknown error occurred");
               }
@@ -346,6 +514,9 @@ export default function App() {
         toolCallHistory={toolCallHistory}
         toolStatusComplete={toolStatusComplete}
         backendUrl={BACKEND_URL}
+        voiceOutputEnabled={voiceOutputEnabled}
+        onVoiceOutputToggle={() => setVoiceOutputEnabled(!voiceOutputEnabled)}
+        isAudioPlaying={isAudioPlaying}
       />
     </div>
   );
