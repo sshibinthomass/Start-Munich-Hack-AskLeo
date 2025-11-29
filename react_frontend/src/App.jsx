@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./App.css";
-import { MODEL_OPTIONS, USE_CASES } from "./constants";
+import { MODEL_OPTIONS, USE_CASES, ELEVENLABS_CONFIG } from "./constants";
 import { Sidebar } from "./components/Sidebar";
 import { ChatWindow } from "./components/ChatWindow";
 import { escapeHtml, renderMarkdown } from "./utils/markdown";
@@ -251,7 +251,10 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: text,
-          model_id: "eleven_turbo_v2_5", // Fast model for streaming
+          voice_id: ELEVENLABS_CONFIG.voiceId,
+          model_id: ELEVENLABS_CONFIG.modelId,
+          stability: ELEVENLABS_CONFIG.stability,
+          similarity_boost: ELEVENLABS_CONFIG.similarityBoost,
         }),
       });
 
@@ -290,6 +293,9 @@ export default function App() {
     
     const audio = new Audio(audioUrl);
     currentAudioRef.current = audio;
+    
+    // Set playback speed (1.0 = normal, 1.2 = 20% faster, etc.)
+    audio.playbackRate = ELEVENLABS_CONFIG.playbackSpeed || 1.0;
     
     audio.onended = () => {
       URL.revokeObjectURL(audioUrl);

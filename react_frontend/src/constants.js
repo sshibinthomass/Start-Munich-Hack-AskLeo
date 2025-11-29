@@ -2,6 +2,17 @@ export const USE_CASES = [
     { value: "mcp_chatbot", label: "MCP Chatbot" },
 ];
 
+// ElevenLabs Voice Configuration
+// Replace "YOUR_CUSTOM_VOICE_ID_HERE" with your custom voice ID from ElevenLabs
+// You can find your voice ID at: https://elevenlabs.io/app/voices
+export const ELEVENLABS_CONFIG = {
+  voiceId: "7Ugo3lVEU8TpqzBd26gp", // Replace with your custom voice ID
+  modelId: "eleven_turbo_v2_5", // Fast model for streaming
+  stability: 0.5,        // 0.0 = more expressive/varied, 1.0 = more stable/consistent
+  similarityBoost: 0.75, // 0.0-1.0, how closely it matches the original voice (higher = closer match)
+  playbackSpeed: 1.2,    // 1.0 = normal, 1.2 = 20% faster, 1.5 = 50% faster, 2.0 = 2x speed
+};
+
 export const MODEL_OPTIONS = {
   openai: [
     { value: "gpt-4.1-2025-04-14", label: "GPT-4.1 2025-04-14" },
