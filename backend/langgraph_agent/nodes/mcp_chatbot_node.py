@@ -21,7 +21,7 @@ from configurations import AppConfiguration  # noqa: E402
 from langgraph_agent.states.chatbotState import ChatbotState  # noqa: E402
 from langgraph_agent.prompts import get_scout_system_prompt  # noqa: E402
 from langgraph_agent.mcps.tool_loader import filter_tools_by_name  # noqa: E402
-from langgraph_agent.tools.custom_tools import get_all_calculation_tools  # noqa: E402
+from langgraph_agent.tools.custom_tools import get_all_gmail_tools, get_all_calendar_tools  # noqa: E402
 from langgraph_agent.generic.tool_runner import run_llm_tool_loop  # noqa: E402
 
 load_dotenv()
@@ -68,9 +68,11 @@ class MCPChatbotNode:
         if tavily_api_key:
             self.tools.append(TavilySearch(max_results=5, api_key=tavily_api_key))
 
-        # Add all custom calculation tools
-        calculation_tools = get_all_calculation_tools()
-        self.tools.extend(calculation_tools)
+        # Add Gmail and Calendar tools
+        gmail_tools = get_all_gmail_tools()
+        calendar_tools = get_all_calendar_tools()
+        self.tools.extend(gmail_tools)
+        self.tools.extend(calendar_tools)
         required_tool_names = settings.mcps.mcp_chatbot_node_config
         self.tools = filter_tools_by_name(self.tools, required_tool_names)
 
