@@ -31,6 +31,7 @@ from langchain_core.messages import (
     AIMessage,
 )  # noqa: E402
 from langgraph_agent.mcps.tool_loader import load_tools_with_timeout  # noqa: E402
+from langgraph_agent.prompts import get_scout_system_prompt  # noqa: E402
 from langgraph_agent.generic import (  # noqa: E402
     reset_tool_status,
     finalize_tool_status,
@@ -173,6 +174,22 @@ async def root():
     return {"message": "Agentic Base React Backend API", "status": "running"}
 
 
+@app.get("/products")
+async def get_products():
+    """Get all products from the product.json file."""
+    try:
+        product_file = project_root / "data" / "product.json"
+        with open(product_file, "r") as f:
+            products = json.load(f)
+        return products
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Product data not found")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Invalid product data format")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading products: {str(e)}")
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -284,7 +301,8 @@ async def chat_simple(request: SimpleChatRequest):
         reset_tool_status(session_key)
 
         # Build messages from stored history and current input
-        messages = [SystemMessage(content="You are a helpful and efficient assistant.")]
+        system_prompt = get_scout_system_prompt()
+        messages = [SystemMessage(content=system_prompt)]
         messages.extend(session_store[session_key])
         user_msg = HumanMessage(content=request.message)
         messages.append(user_msg)

@@ -1,0 +1,133 @@
+[
+  {
+    "vendor": "Filippo Dunkler - Victoria Arduino",
+    "currency": "USD",
+    "id": "va_prod_001",
+    "name": "Maverick",
+    "category": "Flagship Espresso Machine",
+    "brand": "Victoria Arduino",
+    "color": "Black",
+    "versions": [
+      {
+        "version": "Gravimetric 3gr",
+        "productCode": "MMAVERGVT3030048",
+        "description": "Victoria Arduino's top flagship machine featuring gravimetric technology, ultra-precise extraction control, and modern angular design. Ideal for high-end specialty cafés seeking world-class performance.",
+        "price": 32900.0,
+        "minPrice": 29610.0,
+        "maxPrice": 32900.0,
+        "deliveryTimeDays": 5,
+        "warranty": "2 years",
+        "inStock": true,
+        "stockQuantity": 5,
+        "rating": 4.9,
+        "reviews": 42,
+        "features": [
+          "Gravimetric extraction technology",
+          "Multi-boiler T3 system",
+          "Independent temperature profiling",
+          "Real-time weight measurement",
+          "Premium angular design",
+          "Stainless Steel + Black finish",
+          "Designed for high-volume specialty cafés"
+        ],
+        "specifications": {
+          "groups": 3,
+          "voltage": "220V",
+          "boilerSystem": "Multi-boiler T3",
+          "dimensions": "1010mm x 650mm x 540mm",
+          "bodyMaterial": "Steelux stainless steel",
+          "energySaving": true
+        },
+        "images": [
+          "https://example.com/images/maverick-black-1.jpg",
+          "https://example.com/images/maverick-black-2.jpg"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "va_prod_002",
+    "name": "Eagle Tempo",
+    "category": "Mid-Range Espresso Machine",
+    "brand": "Victoria Arduino",
+    "color": "Black",
+    "versions": [
+      {
+        "version": "Digit 3gr",
+        "productCode": "MVAWERAVDG030031",
+        "description": "A modern, stylish, and high-efficiency espresso machine designed for fast-paced cafés. Digit controls offer consistency and workflow efficiency with premium build quality.",
+        "price": 19900.0,
+        "minPrice": 17900.0,
+        "maxPrice": 19900.0,
+        "deliveryTimeDays": 3,
+        "warranty": "2 years",
+        "inStock": true,
+        "stockQuantity": 12,
+        "rating": 4.7,
+        "reviews": 67,
+        "features": [
+          "Digit electronic dosing",
+          "Modern minimalist design",
+          "High-efficiency thermal system",
+          "Ergonomic workflow layout",
+          "Designed for mid- to high-volume cafés",
+          "Stainless steel frame",
+          "Available in matte black"
+        ],
+        "specifications": {
+          "groups": 3,
+          "voltage": "220V",
+          "steamBoiler": "High-efficiency thermodynamic system",
+          "dimensions": "950mm x 620mm x 520mm",
+          "weight": "72kg"
+        },
+        "images": [
+          "https://example.com/images/eagle-tempo-black-1.jpg",
+          "https://example.com/images/eagle-tempo-black-2.jpg"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "va_prod_003",
+    "name": "E1 Prima",
+    "category": "Entry-Level Compact Espresso Machine",
+    "brand": "Victoria Arduino",
+    "color": "White",
+    "versions": [
+      {
+        "version": "Volumetric T3 w/ Easy Cream",
+        "productCode": "MVAE1PRVN3010062",
+        "description": "A compact, beautifully designed single-group espresso machine featuring full T3 temperature control and Easy Cream automatic steaming. Perfect for small cafés, kiosks, and premium home bars.",
+        "price": 7490.0,
+        "minPrice": 6990.0,
+        "maxPrice": 7490.0,
+        "deliveryTimeDays": 2,
+        "warranty": "1 year",
+        "inStock": true,
+        "stockQuantity": 18,
+        "rating": 4.6,
+        "reviews": 94,
+        "features": [
+          "T3 multi-temperature control",
+          "Easy Cream automatic milk steaming",
+          "Compact footprint",
+          "Energy-efficient NEO engine",
+          "Available in multiple designer finishes",
+          "Perfect for low-to-medium volume environments"
+        ],
+        "specifications": {
+          "groups": 1,
+          "voltage": "110V / 220V",
+          "boilerSystem": "T3 multi-temp",
+          "dimensions": "411mm x 510mm x 510mm",
+          "weight": "37kg"
+        },
+        "images": [
+          "https://example.com/images/e1-prima-white-1.jpg",
+          "https://example.com/images/e1-prima-white-2.jpg"
+        ]
+      }
+    ]
+  }
+]

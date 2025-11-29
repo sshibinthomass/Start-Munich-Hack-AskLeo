@@ -1,11 +1,17 @@
 body {
   margin: 0;
   min-height: 100vh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 html {
   height: 100%;
+}
+
+.app-landing {
+  min-height: 100vh;
+  position: relative;
 }
 
 .app {
@@ -482,9 +488,9 @@ html {
 
 .chat-form {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-radius: 16px;
   border: 1px solid rgba(226, 232, 240, 0.8);
   background: rgba(248, 250, 252, 0.9);
@@ -493,22 +499,31 @@ html {
 
 .chat-input {
   flex: 1;
-  padding: 12px 16px;
-  border-radius: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
   border: 1px solid rgba(148, 163, 184, 0.35);
   font-size: 15px;
   background: #ffffff;
+  height: 40px;
+  box-sizing: border-box;
 }
 
 .chat-button {
-  padding: 12px 22px;
-  border-radius: 12px;
+  padding: 0;
+  border-radius: 10px;
   background: linear-gradient(135deg, #2563eb, #7c3aed);
   color: #ffffff;
   border: none;
   cursor: pointer;
   font-weight: 600;
   box-shadow: 0 10px 22px rgba(37, 99, 235, 0.25);
+  flex-shrink: 0;
+  min-width: 40px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .chat-button:disabled {
@@ -517,26 +532,26 @@ html {
 }
 
 .chat-button-voice {
-  padding: 12px 16px;
-  border-radius: 12px;
+  padding: 0;
+  border-radius: 10px;
   background: rgba(248, 250, 252, 0.95);
   color: #475569;
   border: 1px solid rgba(148, 163, 184, 0.35);
   cursor: pointer;
-  font-size: 18px;
-  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 48px;
-  height: 48px;
+  min-width: 40px;
+  width: 40px;
+  height: 40px;
   transition: all 0.2s ease;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  flex-shrink: 0;
 }
 
 .chat-button-voice__icon {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   transition: transform 0.2s ease;
 }
 
@@ -581,8 +596,8 @@ html {
 }
 
 .chat-button-continuous {
-  padding: 12px 14px;
-  border-radius: 12px;
+  padding: 0;
+  border-radius: 10px;
   background: rgba(248, 250, 252, 0.95);
   color: #475569;
   border: 1px solid rgba(148, 163, 184, 0.35);
@@ -590,10 +605,12 @@ html {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 48px;
-  height: 48px;
+  min-width: 40px;
+  width: 40px;
+  height: 40px;
   transition: all 0.2s ease;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  flex-shrink: 0;
 }
 
 .chat-button-continuous:hover:not(:disabled) {
@@ -624,8 +641,8 @@ html {
 }
 
 .chat-button-continuous svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   transition: transform 0.2s ease;
 }
 
@@ -643,8 +660,8 @@ html {
 }
 
 .chat-button-tts {
-  padding: 12px 14px;
-  border-radius: 12px;
+  padding: 0;
+  border-radius: 10px;
   background: rgba(248, 250, 252, 0.95);
   color: #475569;
   border: 1px solid rgba(148, 163, 184, 0.35);
@@ -652,10 +669,12 @@ html {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 48px;
-  height: 48px;
+  min-width: 40px;
+  width: 40px;
+  height: 40px;
   transition: all 0.2s ease;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  flex-shrink: 0;
 }
 
 .chat-button-tts:hover:not(:disabled) {
@@ -685,8 +704,8 @@ html {
 }
 
 .chat-button-tts svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   transition: transform 0.2s ease;
 }
 

@@ -3,6 +3,8 @@ import "./App.css";
 import { MODEL_OPTIONS, USE_CASES, ELEVENLABS_CONFIG } from "./constants";
 import { Sidebar } from "./components/Sidebar";
 import { ChatWindow } from "./components/ChatWindow";
+import { ProductLanding } from "./components/ProductLanding";
+import { FloatingChat } from "./components/FloatingChat";
 import { escapeHtml, renderMarkdown } from "./utils/markdown";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -279,6 +281,22 @@ export default function App() {
     }
   };
 
+  // Function to stop audio playback
+  const stopAudio = () => {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
+    
+    // Clean up queued audio URLs
+    audioQueueRef.current.forEach((url) => {
+      URL.revokeObjectURL(url);
+    });
+    audioQueueRef.current = [];
+    isPlayingRef.current = false;
+    setIsAudioPlaying(false);
+  };
+
   // Function to play next audio in queue
   const playNextAudio = () => {
     if (audioQueueRef.current.length === 0) {
@@ -349,19 +367,21 @@ export default function App() {
   // Stop audio when voice output is disabled
   useEffect(() => {
     if (!voiceOutputEnabled) {
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause();
-        currentAudioRef.current = null;
-      }
-      audioQueueRef.current.forEach((url) => {
-        URL.revokeObjectURL(url);
-      });
-      audioQueueRef.current = [];
-      isPlayingRef.current = false;
-      setIsAudioPlaying(false);
+      stopAudio();
       textBufferRef.current = "";
     }
   }, [voiceOutputEnabled]);
+
+  // Handler for voice output toggle button
+  const handleVoiceOutputToggle = () => {
+    // If audio is playing, stop it instead of toggling voice output
+    if (isAudioPlaying) {
+      stopAudio();
+    } else {
+      // Otherwise, toggle voice output setting
+      setVoiceOutputEnabled(!voiceOutputEnabled);
+    }
+  };
 
   async function handleSubmitMessage(content) {
     setError("");
@@ -492,21 +512,9 @@ export default function App() {
     USE_CASES.find((option) => option.value === useCase)?.label || "Chat";
 
   return (
-    <div className={`app ${sidebarOpen ? "app--sidebar-open" : "app--sidebar-closed"}`}>
-      {sidebarOpen && (
-        <Sidebar
-          model={model}
-          models={availableModels}
-          useCase={useCase}
-          useCases={USE_CASES}
-          onModelChange={handleModelChange}
-          backendUrl={BACKEND_URL}
-          backendStatus={backendStatus}
-          backendStatusMessage={backendStatusMessage}
-        />
-      )}
-
-      <ChatWindow
+    <div className="app-landing">
+      <ProductLanding />
+      <FloatingChat
         conversation={conversation}
         onSubmit={handleSubmitMessage}
         onClear={resetConversation}
@@ -514,14 +522,12 @@ export default function App() {
         resetting={resetting}
         error={error}
         useCaseLabel={activeUseCaseLabel}
-        sidebarOpen={sidebarOpen}
-        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
         latestToolCall={latestToolCall}
         toolCallHistory={toolCallHistory}
         toolStatusComplete={toolStatusComplete}
         backendUrl={BACKEND_URL}
         voiceOutputEnabled={voiceOutputEnabled}
-        onVoiceOutputToggle={() => setVoiceOutputEnabled(!voiceOutputEnabled)}
+        onVoiceOutputToggle={handleVoiceOutputToggle}
         isAudioPlaying={isAudioPlaying}
       />
     </div>

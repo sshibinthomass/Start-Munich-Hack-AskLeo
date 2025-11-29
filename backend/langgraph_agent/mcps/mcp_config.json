@@ -5,6 +5,11 @@
       "args": ["${MCP_FOLDER_DIR}"],
       "transport": "stdio"
     },
+    "product": {
+      "command": "python",
+      "args": ["${MCP_PRODUCT_DIR}"],
+      "transport": "stdio"
+    },
     "filesystem": {
       "command": "npx",
       "args": [

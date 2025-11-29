@@ -486,14 +486,16 @@ export function ChatWindow({
       <div className="chat-box">
         <header className="chat-header">
           <div className="chat-header__left">
-            <button
-              type="button"
-              className="chat-header__toggle"
-              onClick={onToggleSidebar}
-              aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
-            >
-              {sidebarOpen ? "◀" : "▶"}
-            </button>
+            {onToggleSidebar && (
+              <button
+                type="button"
+                className="chat-header__toggle"
+                onClick={onToggleSidebar}
+                aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+              >
+                {sidebarOpen ? "◀" : "▶"}
+              </button>
+            )}
             <span className="chat-header__title">{useCaseLabel || "Conversation"}</span>
           </div>
           <div className="chat-header__right">
@@ -630,24 +632,48 @@ export function ChatWindow({
           {onVoiceOutputToggle && (
             <button
               type="button"
-              className={`chat-button-tts ${voiceOutputEnabled ? "chat-button-tts--active" : ""}`}
+              className={`chat-button-tts ${voiceOutputEnabled ? "chat-button-tts--active" : ""} ${isAudioPlaying ? "chat-button-tts--playing" : ""}`}
               onClick={onVoiceOutputToggle}
-              disabled={loading || resetting || isAudioPlaying}
-              title={voiceOutputEnabled ? "Disable voice output" : "Enable voice output (ElevenLabs)"}
-              aria-label={voiceOutputEnabled ? "Disable voice output" : "Enable voice output"}
+              disabled={loading || resetting}
+              title={
+                isAudioPlaying
+                  ? "Stop audio playback"
+                  : voiceOutputEnabled
+                  ? "Disable voice output"
+                  : "Enable voice output (ElevenLabs)"
+              }
+              aria-label={
+                isAudioPlaying
+                  ? "Stop audio playback"
+                  : voiceOutputEnabled
+                  ? "Disable voice output"
+                  : "Enable voice output"
+              }
             >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M3 9V15H7L12 20V4L7 9H3ZM16.5 12C16.5 10.23 15.48 8.71 14.5 7.97V16.02C15.48 15.29 16.5 13.77 16.5 12ZM14.5 3.13V5.29C16.89 6.15 18.5 8.83 18.5 12C18.5 15.17 16.89 17.85 14.5 18.71V20.87C18.01 19.93 20.5 16.35 20.5 12C20.5 7.65 18.01 4.07 14.5 3.13Z"
-                  fill="currentColor"
-                />
-              </svg>
+              {isAudioPlaying ? (
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" />
+                </svg>
+              ) : (
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M3 9V15H7L12 20V4L7 9H3ZM16.5 12C16.5 10.23 15.48 8.71 14.5 7.97V16.02C15.48 15.29 16.5 13.77 16.5 12ZM14.5 3.13V5.29C16.89 6.15 18.5 8.83 18.5 12C18.5 15.17 16.89 17.85 14.5 18.71V20.87C18.01 19.93 20.5 16.35 20.5 12C20.5 7.65 18.01 4.07 14.5 3.13Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              )}
             </button>
           )}
           <button
@@ -763,8 +789,20 @@ export function ChatWindow({
             type="submit"
             className="chat-button"
             disabled={loading || resetting || isRecording || isAudioPlaying}
+            aria-label="Send message"
           >
-            Send
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"
+                fill="currentColor"
+              />
+            </svg>
           </button>
         </form>
 

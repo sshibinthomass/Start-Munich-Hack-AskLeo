@@ -21,7 +21,10 @@ from configurations import AppConfiguration  # noqa: E402
 from langgraph_agent.states.chatbotState import ChatbotState  # noqa: E402
 from langgraph_agent.prompts import get_scout_system_prompt  # noqa: E402
 from langgraph_agent.mcps.tool_loader import filter_tools_by_name  # noqa: E402
-from langgraph_agent.tools.custom_tools import get_all_gmail_tools, get_all_calendar_tools  # noqa: E402
+from langgraph_agent.tools.custom_tools import (
+    get_all_gmail_tools,
+    get_all_calendar_tools,
+)  # noqa: E402
 from langgraph_agent.generic.tool_runner import run_llm_tool_loop  # noqa: E402
 
 load_dotenv()
@@ -90,9 +93,7 @@ class MCPChatbotNode:
         # Add system prompt if tools are available and not already present
         if self.tools:
             # Use the Scout system prompt when tools are available (like in graph.py)
-            system_prompt = get_scout_system_prompt(
-                working_dir=os.environ.get("MCP_FILESYSTEM_DIR", ""),
-            )
+            system_prompt = get_scout_system_prompt()
             # Prepend system message if not already present
             if not any(isinstance(msg, SystemMessage) for msg in messages):
                 messages = [SystemMessage(content=system_prompt)] + messages

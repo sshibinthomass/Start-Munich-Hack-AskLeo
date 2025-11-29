@@ -5,6 +5,8 @@ class MCPConfiguration(BaseSettings):
     model_config = SettingsConfigDict(env_nested_delimiter="__")
 
     mcp_chatbot_node_config: list[str] = [
+        "product_get",
+        "product_list_keys",
         "search",
         "fetch_content",
         "get_me",
@@ -31,7 +33,7 @@ class MCPConfiguration(BaseSettings):
         # Calendar tools
         "create_event",
         "list_events",
-        "delete_event"
+        "delete_event",
     ]
 
 

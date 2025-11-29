@@ -18,9 +18,7 @@ def build_agent_graph(tools: List[BaseTool] = []):
     llm = ChatOpenAI(name="Scout", model="gpt-4.1-mini")
     if tools:
         llm = llm.bind_tools(tools)
-        system_prompt = get_scout_system_prompt(
-            working_dir=os.environ.get("MCP_FILESYSTEM_DIR", ""),
-        )
+        system_prompt = get_scout_system_prompt()
     else:
         system_prompt = get_scout_system_prompt()
 
