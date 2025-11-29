@@ -3,12 +3,14 @@ import os
 import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
+import tempfile
+import openai
 
 # Add project root to path
 current_file = Path(__file__).resolve()
@@ -313,18 +315,25 @@ async def chat_simple(request: SimpleChatRequest):
                     # Stream and accumulate chunks to reconstruct full message
                     async for chunk in mcp_node.llm.astream(working_messages):
                         accumulated_chunks.append(chunk)
-                        
+
                         # Stream content chunks to user
                         if hasattr(chunk, "content") and chunk.content:
                             content = chunk.content
                             response_content += content
                             full_response += content
                             yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
-                        
+
                         # Check for tool calls in chunks and notify user
-                        if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
+                        if (
+                            hasattr(chunk, "tool_call_chunks")
+                            and chunk.tool_call_chunks
+                        ):
                             for tool_chunk in chunk.tool_call_chunks:
-                                tool_name = tool_chunk.get("name", "") or (tool_chunk.get("name", "") if isinstance(tool_chunk, dict) else getattr(tool_chunk, "name", ""))
+                                tool_name = tool_chunk.get("name", "") or (
+                                    tool_chunk.get("name", "")
+                                    if isinstance(tool_chunk, dict)
+                                    else getattr(tool_chunk, "name", "")
+                                )
                                 if tool_name:
                                     yield f"data: {json.dumps({'type': 'tool_call', 'tool_name': tool_name})}\n\n"
 
@@ -332,9 +341,10 @@ async def chat_simple(request: SimpleChatRequest):
                     if not accumulated_chunks:
                         # No chunks received - this shouldn't happen, but handle it
                         continue
-                    
+
                     # Merge chunks to get full message with complete tool calls
                     from langchain_core.messages import AIMessage
+
                     try:
                         # Merge all chunks into a full message
                         # The + operator on AIMessageChunk merges them properly
@@ -361,24 +371,37 @@ async def chat_simple(request: SimpleChatRequest):
                         # Check response_metadata finish_reason for tool calls
                         elif hasattr(full_response_obj, "response_metadata"):
                             metadata = full_response_obj.response_metadata
-                            finish_reason = metadata.get("finish_reason", "") if metadata else ""
+                            finish_reason = (
+                                metadata.get("finish_reason", "") if metadata else ""
+                            )
                             if finish_reason == "tool_calls":
                                 # Finish reason indicates tool calls, but tool_calls might not be in merged chunk
                                 # We need to get the full response to extract complete tool calls
                                 # This is a fallback when merging doesn't populate tool_calls
                                 try:
-                                    complete_response = await mcp_node.llm.ainvoke(working_messages)
-                                    if hasattr(complete_response, "tool_calls") and complete_response.tool_calls:
+                                    complete_response = await mcp_node.llm.ainvoke(
+                                        working_messages
+                                    )
+                                    if (
+                                        hasattr(complete_response, "tool_calls")
+                                        and complete_response.tool_calls
+                                    ):
                                         has_tool_calls = True
                                         tool_calls_list = complete_response.tool_calls
                                         # If we didn't stream any content but the response has content, stream it now
-                                        if not response_content and hasattr(complete_response, "content") and complete_response.content:
+                                        if (
+                                            not response_content
+                                            and hasattr(complete_response, "content")
+                                            and complete_response.content
+                                        ):
                                             content = complete_response.content
                                             response_content = content
                                             full_response += content
                                             yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
                                 except Exception as e:
-                                    print(f"Error getting complete response for tool calls: {e}")
+                                    print(
+                                        f"Error getting complete response for tool calls: {e}"
+                                    )
                                     has_tool_calls = False
 
                     # If no tool calls, we're done - break
@@ -511,6 +534,87 @@ async def reset_chat(request: ResetChatRequest):
     session_store.pop(session_key, None)
     clear_tool_status(session_key)
     return {"status": "success"}
+
+
+@app.post("/transcribe")
+async def transcribe_audio(audio: UploadFile = File(...)):
+    """
+    Transcribe audio using OpenAI Whisper API.
+    Accepts audio files in various formats (webm, mp3, wav, etc.)
+    """
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="OPENAI_API_KEY not configured. Please set it in your .env file.",
+        )
+
+    # Initialize OpenAI client
+    client = openai.OpenAI(api_key=openai_api_key)
+
+    try:
+        # Read audio file
+        audio_bytes = await audio.read()
+
+        if not audio_bytes:
+            raise HTTPException(status_code=400, detail="Empty audio file received")
+
+        # Determine file extension from content type or filename
+        file_extension = ".webm"  # default
+        if audio.content_type:
+            if "webm" in audio.content_type:
+                file_extension = ".webm"
+            elif "mp3" in audio.content_type:
+                file_extension = ".mp3"
+            elif "wav" in audio.content_type:
+                file_extension = ".wav"
+            elif "m4a" in audio.content_type:
+                file_extension = ".m4a"
+        elif audio.filename:
+            # Extract extension from filename
+            if "." in audio.filename:
+                file_extension = "." + audio.filename.rsplit(".", 1)[1]
+
+        # Save temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
+
+        try:
+            # Transcribe with Whisper
+            with open(tmp_path, "rb") as audio_file:
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    language="en",  # Optional: specify language for better accuracy
+                )
+
+            transcript_text = (
+                transcript.text if hasattr(transcript, "text") else str(transcript)
+            )
+
+            return {"text": transcript_text}
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass  # Ignore cleanup errors
+
+    except openai.AuthenticationError:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid OpenAI API key. Please check your OPENAI_API_KEY in .env",
+        )
+    except openai.RateLimitError:
+        raise HTTPException(
+            status_code=429,
+            detail="OpenAI API rate limit exceeded. Please try again later.",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error transcribing audio: {str(e)}"
+        )
 
 
 def main():

@@ -13,11 +13,17 @@ export function ChatWindow({
   latestToolCall = null,
   toolCallHistory = [],
   toolStatusComplete = true,
+  backendUrl = "http://localhost:8000",
 }) {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const [showToolHistory, setShowToolHistory] = useState(false);
   const [expandedToolIndex, setExpandedToolIndex] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingError, setRecordingError] = useState("");
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const streamRef = useRef(null);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -107,6 +113,139 @@ export function ChatWindow({
   const handleHistoryItemClick = (index) => {
     setExpandedToolIndex((prev) => (prev === index ? null : index));
   };
+
+  const startRecording = async () => {
+    try {
+      setRecordingError("");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported("audio/webm") 
+          ? "audio/webm" 
+          : MediaRecorder.isTypeSupported("audio/mp4")
+          ? "audio/mp4"
+          : "audio/ogg"
+      });
+      
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { 
+          type: mediaRecorder.mimeType || "audio/webm" 
+        });
+        
+        // Stop all tracks to release microphone
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
+        
+        // Send to backend for transcription
+        const formData = new FormData();
+        formData.append("audio", audioBlob, "recording.webm");
+        
+        try {
+          const response = await fetch(`${backendUrl}/transcribe`, {
+            method: "POST",
+            body: formData,
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ detail: "Transcription failed" }));
+            throw new Error(errorData.detail || `Server error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          if (data.text && data.text.trim()) {
+            const transcribedText = data.text.trim();
+            // Set the transcribed text in the input field
+            if (inputRef.current) {
+              inputRef.current.value = transcribedText;
+            }
+            // Automatically submit the transcribed message
+            onSubmit(transcribedText);
+            // Clear the input field after submission (same as handleSubmit does)
+            if (inputRef.current) {
+              inputRef.current.value = "";
+            }
+          } else {
+            setRecordingError("No speech detected. Please try again.");
+          }
+        } catch (err) {
+          console.error("Transcription error:", err);
+          setRecordingError(err.message || "Failed to transcribe audio. Please try again.");
+        } finally {
+          setIsRecording(false);
+        }
+      };
+      
+      mediaRecorder.onerror = (event) => {
+        console.error("MediaRecorder error:", event);
+        setRecordingError("Recording error occurred. Please try again.");
+        setIsRecording(false);
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
+      };
+      
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      setRecordingError(
+        err.name === "NotAllowedError" 
+          ? "Microphone access denied. Please allow microphone access and try again."
+          : err.name === "NotFoundError"
+          ? "No microphone found. Please connect a microphone and try again."
+          : "Failed to access microphone. Please try again."
+      );
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      if (mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+      
+      // Stop stream if still active
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    }
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+    };
+  }, []);
 
   return (
     <section className="chat-pane">
@@ -245,19 +384,70 @@ export function ChatWindow({
           <input
             className="chat-input"
             placeholder="Type your message…"
-            disabled={resetting}
+            disabled={resetting || isRecording}
             ref={inputRef}
           />
           <button
+            type="button"
+            className={`chat-button-voice ${isRecording ? "chat-button-voice--recording" : ""}`}
+            onClick={toggleRecording}
+            disabled={loading || resetting}
+            aria-label={isRecording ? "Stop recording" : "Start voice input"}
+            title={isRecording ? "Stop recording" : "Start voice input"}
+          >
+            {isRecording ? (
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className="chat-button-voice__icon"
+              >
+                <rect
+                  x="7"
+                  y="7"
+                  width="10"
+                  height="10"
+                  rx="1.5"
+                  fill="currentColor"
+                />
+              </svg>
+            ) : (
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className="chat-button-voice__icon"
+              >
+                <path
+                  d="M12 2C10.3431 2 9 3.34315 9 5V12C9 13.6569 10.3431 15 12 15C13.6569 15 15 13.6569 15 12V5C15 3.34315 13.6569 2 12 2Z"
+                  fill="currentColor"
+                />
+                <path
+                  d="M19 10V12C19 15.866 15.866 19 12 19C8.13401 19 5 15.866 5 12V10H7V12C7 14.7614 9.23858 17 12 17C14.7614 17 17 14.7614 17 12V10H19Z"
+                  fill="currentColor"
+                />
+                <path
+                  d="M11 22H13V20H11V22Z"
+                  fill="currentColor"
+                />
+              </svg>
+            )}
+          </button>
+          <button
             type="submit"
             className="chat-button"
-            disabled={loading || resetting}
+            disabled={loading || resetting || isRecording}
           >
             Send
           </button>
         </form>
 
         {error && <div className="chat-error">{error}</div>}
+        {recordingError && <div className="chat-error">{recordingError}</div>}
       </div>
     </section>
   );

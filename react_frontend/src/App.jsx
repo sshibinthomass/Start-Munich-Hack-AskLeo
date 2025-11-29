@@ -345,6 +345,7 @@ export default function App() {
         latestToolCall={latestToolCall}
         toolCallHistory={toolCallHistory}
         toolStatusComplete={toolStatusComplete}
+        backendUrl={BACKEND_URL}
       />
     </div>
   );
