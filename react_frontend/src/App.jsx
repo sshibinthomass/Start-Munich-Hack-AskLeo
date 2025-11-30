@@ -32,6 +32,11 @@ export default function App() {
   const currentAudioRef = useRef(null);
   const textBufferRef = useRef("");
   const isPlayingRef = useRef(false);
+  const [agentToAgentEnabled, setAgentToAgentEnabled] = useState(false);
+  const [agentToAgentLoading, setAgentToAgentLoading] = useState(false);
+  const [dunklerConversationId, setDunklerConversationId] = useState(null);
+  const [maxExchanges, setMaxExchanges] = useState(11);
+  const [conversationMode, setConversationMode] = useState("fixed"); // "fixed" or "until_deal"
 
   const normalizeToolEntry = (entry) => {
     if (!entry) return null;
@@ -189,6 +194,7 @@ export default function App() {
     setLatestToolCall(null);
     setToolCallHistory([]);
     setToolStatusComplete(true);
+    setDunklerConversationId(null); // Clear Dunkler conversation ID
     try {
       const res = await fetch(`${BACKEND_URL}/chat/reset`, {
         method: "POST",
@@ -245,8 +251,10 @@ export default function App() {
     }
   };
 
-  // Function to queue audio for text
+  // Function to queue audio for text (for regular chat)
   const queueAudioForText = async (text) => {
+    if (!voiceOutputEnabled) return;
+    
     try {
       const response = await fetch(`${BACKEND_URL}/tts`, {
         method: "POST",
@@ -269,7 +277,7 @@ export default function App() {
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
       
-      // Add to queue
+      // Add to queue (as string for backward compatibility with regular chat)
       audioQueueRef.current.push(audioUrl);
       
       // Start playing if not already playing
@@ -289,8 +297,13 @@ export default function App() {
     }
     
     // Clean up queued audio URLs
-    audioQueueRef.current.forEach((url) => {
+    audioQueueRef.current.forEach((item) => {
+      const url = typeof item === 'string' ? item : item.audioUrl;
       URL.revokeObjectURL(url);
+      // Resolve any pending promises
+      if (typeof item === 'object' && item.resolve) {
+        item.resolve();
+      }
     });
     audioQueueRef.current = [];
     isPlayingRef.current = false;
@@ -307,7 +320,9 @@ export default function App() {
 
     isPlayingRef.current = true;
     setIsAudioPlaying(true);
-    const audioUrl = audioQueueRef.current.shift();
+    const queueItem = audioQueueRef.current.shift();
+    const audioUrl = typeof queueItem === 'string' ? queueItem : queueItem.audioUrl;
+    const resolveCallback = typeof queueItem === 'object' && queueItem.resolve ? queueItem.resolve : null;
     
     const audio = new Audio(audioUrl);
     currentAudioRef.current = audio;
@@ -317,12 +332,18 @@ export default function App() {
     
     audio.onended = () => {
       URL.revokeObjectURL(audioUrl);
+      if (resolveCallback) {
+        resolveCallback();
+      }
       playNextAudio(); // Play next in queue
     };
     
     audio.onerror = () => {
       console.error("Audio playback error");
       URL.revokeObjectURL(audioUrl);
+      if (resolveCallback) {
+        resolveCallback();
+      }
       isPlayingRef.current = false;
       setIsAudioPlaying(false);
       playNextAudio(); // Try next
@@ -339,6 +360,9 @@ export default function App() {
     audio.play().catch((err) => {
       console.error("Error playing audio:", err);
       URL.revokeObjectURL(audioUrl);
+      if (resolveCallback) {
+        resolveCallback();
+      }
       isPlayingRef.current = false;
       setIsAudioPlaying(false);
       playNextAudio();
@@ -355,8 +379,13 @@ export default function App() {
       }
       
       // Clean up queued audio URLs
-      audioQueueRef.current.forEach((url) => {
+      audioQueueRef.current.forEach((item) => {
+        const url = typeof item === 'string' ? item : item.audioUrl;
         URL.revokeObjectURL(url);
+        // Resolve any pending promises
+        if (typeof item === 'object' && item.resolve) {
+          item.resolve();
+        }
       });
       audioQueueRef.current = [];
       isPlayingRef.current = false;
@@ -383,12 +412,256 @@ export default function App() {
     }
   };
 
+  // Function to queue audio for agent message with specific voice
+  const queueAudioForAgent = async (text, agent) => {
+    if (!voiceOutputEnabled) return Promise.resolve();
+    
+    try {
+      // Use different voice for each agent
+      const voiceId = agent === "mcp_chatbot" 
+        ? ELEVENLABS_CONFIG.mcpChatbotVoiceId 
+        : ELEVENLABS_CONFIG.externalApiVoiceId;
+      
+      const response = await fetch(`${BACKEND_URL}/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: text,
+          voice_id: voiceId,
+          model_id: ELEVENLABS_CONFIG.modelId,
+          stability: ELEVENLABS_CONFIG.stability,
+          similarity_boost: ELEVENLABS_CONFIG.similarityBoost,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("TTS request failed:", response.status);
+        return Promise.resolve();
+      }
+
+      // Convert response to blob and create audio URL
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      // Create a promise that resolves when this specific audio finishes
+      return new Promise((resolve) => {
+        // Add to queue with resolve callback
+        audioQueueRef.current.push({ audioUrl, resolve });
+        
+        // Start playing if not already playing
+        if (!isPlayingRef.current) {
+          playNextAudio();
+        }
+      });
+    } catch (err) {
+      console.error("Error generating TTS:", err);
+      return Promise.resolve();
+    }
+  };
+
+  // Handler for agent-to-agent toggle
+  const handleAgentToAgentToggle = async () => {
+    if (agentToAgentEnabled) {
+      // Disable agent-to-agent mode (but keep conversation ID for continued chat)
+      setAgentToAgentEnabled(false);
+      setAgentToAgentLoading(false);
+      stopAudio(); // Stop any playing audio
+      // Don't clear dunklerConversationId - user can continue chatting
+      return;
+    }
+
+    // Enable agent-to-agent mode and start conversation
+    setAgentToAgentEnabled(true);
+    setAgentToAgentLoading(true);
+    setError("");
+    
+    // Clear existing conversation and audio
+    setConversation([]);
+    setLatestToolCall(null);
+    setToolCallHistory([]);
+    setToolStatusComplete(true);
+    setDunklerConversationId(null); // Reset conversation ID
+    stopAudio();
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/chat/agent-to-agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          selected_llm: model,
+          max_exchanges: conversationMode === "fixed" ? maxExchanges : null,
+          conversation_mode: conversationMode,
+          voice_output_enabled: voiceOutputEnabled,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || "Agent-to-agent backend returned an error.");
+      }
+
+      // Handle streaming response
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.type === "status") {
+                // Status message (e.g., "Dunkler agent initialized")
+                setConversation((prev) => [
+                  ...prev,
+                  {
+                    text: data.message,
+                    rendered: escapeHtml(data.message),
+                    isUser: false,
+                    agent: "system",
+                  },
+                ]);
+              } else if (data.type === "agent_message") {
+                // Message from an agent
+                const agentName = data.agent === "mcp_chatbot" ? "Leo" : "Dunkler";
+                const messageText = `[${agentName}]: ${data.message}`;
+                const rendered = renderMarkdown(data.message);
+                
+                setConversation((prev) => [
+                  ...prev,
+                  {
+                    text: data.message,
+                    rendered: `<strong>${agentName}:</strong> ${rendered}`,
+                    isUser: false,
+                    agent: data.agent,
+                  },
+                ]);
+
+                // Queue audio for this message if voice output is enabled and wait for it to complete
+                if (voiceOutputEnabled) {
+                  await queueAudioForAgent(data.message, data.agent);
+                }
+              } else if (data.type === "error") {
+                const errorMsg = data.error || "Unknown error occurred";
+                setError(`Error from ${data.agent || "system"}: ${errorMsg}`);
+                setAgentToAgentLoading(false);
+              } else if (data.type === "done") {
+                const completionMessage = data.deal_reached
+                  ? `Deal reached after ${data.exchanges || 0} exchanges! You can now continue chatting with Dunkler.`
+                  : `Conversation completed after ${data.exchanges || 0} exchanges. You can now continue chatting with Dunkler.`;
+                
+                setConversation((prev) => [
+                  ...prev,
+                  {
+                    text: completionMessage,
+                    rendered: escapeHtml(completionMessage),
+                    isUser: false,
+                    agent: "system",
+                  },
+                ]);
+                setAgentToAgentLoading(false);
+                // Store conversation ID for continued chat with Dunkler
+                if (data.conversation_id) {
+                  setDunklerConversationId(data.conversation_id);
+                }
+              }
+            } catch (parseError) {
+              console.error("Error parsing SSE data:", parseError);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      let message = err.message || "Something went wrong";
+      setError(message);
+      setAgentToAgentEnabled(false);
+      setAgentToAgentLoading(false);
+    }
+  };
+
   async function handleSubmitMessage(content) {
     setError("");
 
     const trimmed = content.trim();
     if (!trimmed) return;
 
+    // Check if we should send to Dunkler (after agent-to-agent conversation)
+    // Priority: If Dunkler conversation exists, always send to Dunkler (not Leo)
+    if (dunklerConversationId) {
+      // Send message to Dunkler
+      const userMessage = {
+        text: trimmed,
+        rendered: escapeHtml(trimmed),
+        isUser: true,
+      };
+      setConversation((prev) => [...prev, userMessage]);
+      setLoading(true);
+
+      // Add empty bot message that we'll update
+      setConversation((prev) => [
+        ...prev,
+        { text: "", rendered: "", isUser: false, agent: "external_api" },
+      ]);
+
+      try {
+        const response = await fetch(`${BACKEND_URL}/chat/dunkler`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: trimmed,
+            conversation_id: dunklerConversationId,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || "Dunkler backend returned an error.");
+        }
+
+        const data = await response.json();
+        const dunklerResponse = data.response || "No response";
+        const rendered = renderMarkdown(dunklerResponse);
+
+        setConversation((prev) => {
+          const updated = [...prev];
+          const lastIndex = updated.length - 1;
+          if (lastIndex >= 0 && !updated[lastIndex].isUser) {
+            updated[lastIndex] = {
+              text: dunklerResponse,
+              rendered: `<strong>Dunkler:</strong> ${rendered}`,
+              isUser: false,
+              agent: "external_api",
+            };
+          }
+          return updated;
+        });
+
+        // Queue audio if voice output is enabled
+        if (voiceOutputEnabled) {
+          await queueAudioForAgent(dunklerResponse, "external_api");
+        }
+
+        setLoading(false);
+        return;
+      } catch (err) {
+        let message = err.message || "Something went wrong";
+        setError(message);
+        setLoading(false);
+        setConversation((prev) => prev.slice(0, -1)); // Remove empty bot message
+        return;
+      }
+    }
+
+    // Normal chat with Leo
     const userMessage = {
       text: trimmed,
       rendered: escapeHtml(trimmed),
@@ -529,6 +802,13 @@ export default function App() {
         voiceOutputEnabled={voiceOutputEnabled}
         onVoiceOutputToggle={handleVoiceOutputToggle}
         isAudioPlaying={isAudioPlaying}
+        agentToAgentEnabled={agentToAgentEnabled}
+        onAgentToAgentToggle={handleAgentToAgentToggle}
+        agentToAgentLoading={agentToAgentLoading}
+        maxExchanges={maxExchanges}
+        onMaxExchangesChange={setMaxExchanges}
+        conversationMode={conversationMode}
+        onConversationModeChange={setConversationMode}
       />
     </div>
   );

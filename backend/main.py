@@ -39,6 +39,7 @@ from langgraph_agent.generic import (  # noqa: E402
     clear_tool_status,
     tool_status_stream,
 )
+from langgraph_agent.agent_communication import ExternalAPIAgent  # noqa: E402
 
 # Load environment variables
 load_dotenv()
@@ -49,6 +50,8 @@ chatbot_graph = None
 mcp_tools = None
 # In-memory session store: (session_id, use_case) -> list of LangChain messages
 session_store: Dict[str, List] = {}
+# Store external agent conversation IDs: session_id -> conversation_id
+external_agent_conversations: Dict[str, str] = {}
 
 
 async def load_mcp_tools():
@@ -166,6 +169,19 @@ class SimpleChatRequest(BaseModel):
 class ResetChatRequest(BaseModel):
     session_id: Optional[str] = "default"
     use_case: Optional[str] = "mcp_chatbot"
+
+
+class AgentToAgentRequest(BaseModel):
+    provider: Optional[str] = "groq"
+    selected_llm: Optional[str] = None
+    max_exchanges: Optional[int] = 10
+    conversation_mode: Optional[str] = "fixed"  # "fixed" or "until_deal"
+    voice_output_enabled: Optional[bool] = False
+
+
+class DunklerChatRequest(BaseModel):
+    message: str
+    conversation_id: str
 
 
 @app.get("/")
@@ -553,6 +569,379 @@ async def reset_chat(request: ResetChatRequest):
     session_store.pop(session_key, None)
     clear_tool_status(session_key)
     return {"status": "success"}
+
+
+async def get_mcp_chatbot_response(
+    message: str,
+    session_id: str,
+    provider: str,
+    selected_llm: str,
+    use_case: str = "mcp_chatbot",
+) -> str:
+    """
+    Helper function to get a response from the MCP chatbot.
+    Returns the full response text.
+    """
+    # Choose LLM based on provider/model
+    if provider == "groq":
+        user_controls_input = {
+            "GROQ_API_KEY": os.getenv("GROQ_API_KEY", ""),
+            "selected_llm": selected_llm or "openai/gpt-oss-20b",
+        }
+        llm = GroqLLM(user_controls_input).get_base_llm()
+    elif provider == "openai":
+        user_controls_input = {
+            "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
+            "selected_llm": selected_llm or "gpt-4o-mini",
+        }
+        llm = OpenAiLLM(user_controls_input).get_base_llm()
+    elif provider == "gemini":
+        user_controls_input = {
+            "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY", ""),
+            "selected_llm": selected_llm or "gemini-2.5-flash",
+        }
+        llm = GeminiLLM(user_controls_input).get_base_llm()
+    elif provider == "ollama":
+        user_controls_input = {
+            "selected_llm": selected_llm or "gemma3:1b",
+            "OLLAMA_BASE_URL": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+        }
+        llm = OllamaLLM(user_controls_input).get_base_llm()
+    elif provider == "anthropic":
+        user_controls_input = {
+            "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", ""),
+            "selected_llm": selected_llm or "claude-haiku-4-5-20251001",
+        }
+        llm = AnthropicLLM(user_controls_input).get_base_llm()
+    else:
+        raise ValueError(f"Unsupported provider: {provider}")
+
+    # Build graph with tools
+    tools = None
+    if use_case == "mcp_chatbot":
+        tools = mcp_tools if mcp_tools is not None else await load_mcp_tools()
+
+    graph_builder = GraphBuilder(llm, {"selected_llm": selected_llm or ""})
+    _ = await graph_builder.setup_graph(use_case, tools=tools)
+
+    # Get or create session
+    session_key = f"{session_id}::{use_case}"
+    if session_key not in session_store:
+        session_store[session_key] = []
+    reset_tool_status(session_key)
+
+    # Build messages
+    system_prompt = get_scout_system_prompt()
+    messages = [SystemMessage(content=system_prompt)]
+    messages.extend(session_store[session_key])
+    user_msg = HumanMessage(content=message)
+    messages.append(user_msg)
+
+    # Get response using MCPChatbotNode
+    from langgraph_agent.nodes.mcp_chatbot_node import MCPChatbotNode
+    from langchain_core.messages import ToolMessage
+
+    mcp_node = MCPChatbotNode(llm, tools=tools)
+    working_messages = list(messages)
+    iteration = 0
+    max_iterations = 10
+
+    while iteration < max_iterations:
+        iteration += 1
+
+        # Get LLM response
+        response_obj = await mcp_node.llm.ainvoke(working_messages)
+
+        # Check for tool calls
+        has_tool_calls = False
+        tool_calls_list = []
+        if hasattr(response_obj, "tool_calls") and response_obj.tool_calls:
+            has_tool_calls = True
+            tool_calls_list = response_obj.tool_calls
+
+        # If no tool calls, we're done
+        if not has_tool_calls:
+            response_content = (
+                response_obj.content
+                if hasattr(response_obj, "content")
+                else str(response_obj)
+            )
+            # Update session store
+            session_store[session_key].append(user_msg)
+            session_store[session_key].append(AIMessage(content=response_content))
+            return response_content
+
+        # Handle tool calls
+        if tool_calls_list and mcp_node.tools:
+            tool_map = {tool.name: tool for tool in mcp_node.tools}
+            tool_messages = []
+
+            for tool_call in tool_calls_list:
+                tool_name = (
+                    getattr(tool_call, "name", None) or tool_call.get("name")
+                    if isinstance(tool_call, dict)
+                    else None
+                )
+                tool_id = (
+                    getattr(tool_call, "id", None) or tool_call.get("id")
+                    if isinstance(tool_call, dict)
+                    else None
+                )
+                tool_args = (
+                    getattr(tool_call, "args", None) or tool_call.get("args")
+                    if isinstance(tool_call, dict)
+                    else {}
+                )
+
+                if tool_name in tool_map:
+                    tool = tool_map[tool_name]
+                    try:
+                        if hasattr(tool, "ainvoke"):
+                            tool_result = await tool.ainvoke(tool_args)
+                        elif hasattr(tool, "invoke"):
+                            tool_result = tool.invoke(tool_args)
+                        else:
+                            tool_result = str(tool_args)
+
+                        tool_message = ToolMessage(
+                            content=str(tool_result),
+                            tool_call_id=tool_id or tool_name,
+                        )
+                        tool_messages.append(tool_message)
+                    except Exception as e:
+                        tool_message = ToolMessage(
+                            content=f"Error: {str(e)}",
+                            tool_call_id=tool_id or tool_name,
+                        )
+                        tool_messages.append(tool_message)
+
+            response_content = (
+                response_obj.content if hasattr(response_obj, "content") else ""
+            )
+            working_messages.append(
+                AIMessage(content=response_content, tool_calls=tool_calls_list)
+            )
+            working_messages.extend(tool_messages)
+        else:
+            break
+
+    # Fallback: return last response
+    response_content = (
+        response_obj.content if hasattr(response_obj, "content") else str(response_obj)
+    )
+    session_store[session_key].append(user_msg)
+    session_store[session_key].append(AIMessage(content=response_content))
+    return response_content
+
+
+@app.post("/chat/agent-to-agent")
+async def agent_to_agent_chat(request: AgentToAgentRequest):
+    """
+    Agent-to-agent communication endpoint.
+    Orchestrates a conversation between the MCP chatbot and external API agent.
+    MCP chatbot initiates with "hi" and they exchange messages.
+    Can run for a fixed number of exchanges or until a deal is reached.
+    Dunkler (external API) always has the last message.
+    """
+    try:
+        provider = (request.provider or "groq").lower()
+        selected_llm = request.selected_llm
+        conversation_mode = request.conversation_mode or "fixed"
+        max_exchanges = (
+            request.max_exchanges or 11 if conversation_mode == "fixed" else None
+        )
+
+        # Use separate session ID for agent-to-agent
+        agent_session_id = f"agent-to-agent-{os.urandom(8).hex()}"
+
+        async def generate_stream():
+            try:
+                # Initialize external API agent
+                external_agent = ExternalAPIAgent()
+                await external_agent.initialize_conversation()
+                yield f"data: {json.dumps({'type': 'status', 'message': 'Dunkler agent initialized'})}\n\n"
+
+                # Start with MCP chatbot sending "hi"
+                initial_message = "hi"
+                yield f"data: {json.dumps({'type': 'agent_message', 'agent': 'mcp_chatbot', 'message': initial_message})}\n\n"
+
+                # Helper function to check if a deal has been reached
+                def check_deal_reached(messages: List[str]) -> bool:
+                    """Check if messages indicate a deal has been reached."""
+                    deal_keywords = [
+                        "deal",
+                        "agreed",
+                        "accept",
+                        "accepted",
+                        "confirmed",
+                        "confirmation",
+                        "agreement",
+                        "settled",
+                        "finalized",
+                        "approved",
+                        "approved",
+                        "yes, let's proceed",
+                        "sounds good",
+                        "we have a deal",
+                        "deal is done",
+                        "i agree",
+                        "i accept",
+                        "confirmed",
+                        "let's finalize",
+                        "agreed upon",
+                    ]
+                    recent_messages = " ".join(
+                        messages[-4:]
+                    ).lower()  # Check last 4 messages
+                    keyword_count = sum(
+                        1 for keyword in deal_keywords if keyword in recent_messages
+                    )
+                    # If multiple deal keywords appear, likely a deal
+                    return keyword_count >= 2
+
+                # Main conversation loop
+                # We want Dunkler (external_api) to always have the last message
+                # So we do pairs of exchanges: Dunkler -> Leo, and ensure we end with Dunkler
+                current_message = initial_message
+                exchange_count = 0
+                conversation_messages = [initial_message]
+                deal_reached = False
+                max_iterations = 50  # Safety limit for until_deal mode
+
+                while True:
+                    # Check if we should continue
+                    if conversation_mode == "fixed":
+                        if exchange_count >= max_exchanges:
+                            break
+                    elif conversation_mode == "until_deal":
+                        if deal_reached:
+                            yield f"data: {json.dumps({'type': 'status', 'message': 'Deal reached! Conversation ending.'})}\n\n"
+                            break
+                        if exchange_count >= max_iterations:
+                            yield f"data: {json.dumps({'type': 'status', 'message': 'Maximum iterations reached. Ending conversation.'})}\n\n"
+                            break
+                    # External API agent (Dunkler) responds to current message
+                    try:
+                        external_response = await external_agent.send_message(
+                            current_message
+                        )
+                        yield f"data: {json.dumps({'type': 'agent_message', 'agent': 'external_api', 'message': external_response})}\n\n"
+                        conversation_messages.append(external_response)
+
+                        # Check for deal in until_deal mode
+                        if conversation_mode == "until_deal":
+                            deal_reached = check_deal_reached(conversation_messages)
+                            if deal_reached:
+                                break
+                    except Exception as e:
+                        yield f"data: {json.dumps({'type': 'error', 'agent': 'external_api', 'error': str(e)})}\n\n"
+                        break
+
+                    exchange_count += 1
+
+                    # Check if we've reached the max exchanges (fixed mode) - if so, Dunkler has the last message
+                    if conversation_mode == "fixed" and exchange_count >= max_exchanges:
+                        break
+
+                    # MCP chatbot (Leo) responds to external API's message
+                    try:
+                        mcp_response = await get_mcp_chatbot_response(
+                            external_response,
+                            agent_session_id,
+                            provider,
+                            selected_llm,
+                            "mcp_chatbot",
+                        )
+                        yield f"data: {json.dumps({'type': 'agent_message', 'agent': 'mcp_chatbot', 'message': mcp_response})}\n\n"
+                        current_message = mcp_response
+                        conversation_messages.append(mcp_response)
+
+                        # Check for deal in until_deal mode
+                        if conversation_mode == "until_deal":
+                            deal_reached = check_deal_reached(conversation_messages)
+                            if deal_reached:
+                                # Let Dunkler have the last word after deal is detected
+                                break
+                    except Exception as e:
+                        yield f"data: {json.dumps({'type': 'error', 'agent': 'mcp_chatbot', 'error': str(e)})}\n\n"
+                        break
+
+                    exchange_count += 1
+
+                # Store the external agent conversation ID for continued chat
+                external_agent_conversations[agent_session_id] = (
+                    external_agent.conversation_id
+                )
+
+                # Clean up MCP chatbot session (but keep external agent conversation)
+                session_key = f"{agent_session_id}::mcp_chatbot"
+                session_store.pop(session_key, None)
+                clear_tool_status(session_key)
+
+                # Final message based on mode
+                if conversation_mode == "until_deal" and deal_reached:
+                    yield f"data: {json.dumps({'type': 'done', 'exchanges': exchange_count, 'conversation_id': agent_session_id, 'deal_reached': True})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'done', 'exchanges': exchange_count, 'conversation_id': agent_session_id, 'deal_reached': False})}\n\n"
+
+            except Exception as e:
+                import traceback
+
+                error_msg = str(e)
+                print(f"Agent-to-agent error: {error_msg}")
+                print(traceback.format_exc())
+                yield f"data: {json.dumps({'type': 'error', 'error': error_msg})}\n\n"
+
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error starting agent-to-agent chat: {str(e)}"
+        )
+
+
+@app.post("/chat/dunkler")
+async def chat_with_dunkler(request: DunklerChatRequest):
+    """
+    Send a message to Dunkler (external API agent) after agent-to-agent conversation.
+    Uses the stored conversation ID to continue the conversation with history.
+    """
+    try:
+        # Get the external agent conversation ID
+        if request.conversation_id not in external_agent_conversations:
+            raise HTTPException(
+                status_code=404,
+                detail="Conversation not found. Please start an agent-to-agent conversation first.",
+            )
+
+        conversation_id = external_agent_conversations[request.conversation_id]
+
+        # Create external agent instance and set the conversation ID
+        external_agent = ExternalAPIAgent()
+        external_agent.conversation_id = conversation_id
+
+        # Send message and get response
+        response_text = await external_agent.send_message(request.message)
+
+        return {
+            "response": response_text,
+            "agent": "external_api",
+            "conversation_id": request.conversation_id,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error sending message to Dunkler: {str(e)}"
+        )
 
 
 class TTSRequest(BaseModel):

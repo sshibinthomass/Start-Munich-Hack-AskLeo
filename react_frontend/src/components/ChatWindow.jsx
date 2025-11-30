@@ -595,22 +595,32 @@ export function ChatWindow({
             <div className="chat-empty">Start the conversation below</div>
           )}
 
-          {conversation.map((msg, index) => (
-            <div
-              key={`${index}-${msg.isUser ? "user" : "assistant"}`}
-              className={`chat-message ${msg.isUser ? "chat-message--user" : "chat-message--assistant"}`}
-            >
-              {msg.isUser ? (
-                msg.text
-              ) : (
-                <span
-                  dangerouslySetInnerHTML={{
-                    __html: msg.rendered ?? "",
-                  }}
-                />
-              )}
-            </div>
-          ))}
+          {conversation.map((msg, index) => {
+            const agentClass = msg.agent === "mcp_chatbot" 
+              ? "chat-message--mcp-chatbot" 
+              : msg.agent === "external_api" 
+              ? "chat-message--external-api" 
+              : msg.agent === "system"
+              ? "chat-message--system"
+              : "";
+            
+            return (
+              <div
+                key={`${index}-${msg.isUser ? "user" : "assistant"}`}
+                className={`chat-message ${msg.isUser ? "chat-message--user" : "chat-message--assistant"} ${agentClass}`}
+              >
+                {msg.isUser ? (
+                  msg.text
+                ) : (
+                  <span
+                    dangerouslySetInnerHTML={{
+                      __html: msg.rendered ?? "",
+                    }}
+                  />
+                )}
+              </div>
+            );
+          })}
 
           {loading && <div className="chat-thinking">Thinking…</div>}
           <div ref={messagesEndRef} />

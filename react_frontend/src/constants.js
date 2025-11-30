@@ -1,5 +1,5 @@
 export const USE_CASES = [
-    { value: "mcp_chatbot", label: "MCP Chatbot" },
+    { value: "mcp_chatbot", label: "Leo" },
 ];
 
 // ElevenLabs Voice Configuration
@@ -11,6 +11,9 @@ export const ELEVENLABS_CONFIG = {
   stability: 0.5,        // 0.0 = more expressive/varied, 1.0 = more stable/consistent
   similarityBoost: 0.75, // 0.0-1.0, how closely it matches the original voice (higher = closer match)
   playbackSpeed: 1.2,    // 1.0 = normal, 1.2 = 20% faster, 1.5 = 50% faster, 2.0 = 2x speed
+  // Different voices for agent-to-agent communication
+  mcpChatbotVoiceId: "7Ugo3lVEU8TpqzBd26gp", // Leo voice (default)
+  externalApiVoiceId: "W3Q9IJuvaxALeQXsoLGf", // Dunkler agent voice
 };
 
 export const MODEL_OPTIONS = {

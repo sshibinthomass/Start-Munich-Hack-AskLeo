@@ -475,6 +475,32 @@ html {
   background: #f1f5f9;
 }
 
+.chat-message--mcp-chatbot {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  border-color: rgba(59, 130, 246, 0.3);
+  border-right: 3px solid #3b82f6;
+  border-left: none;
+}
+
+.chat-message--external-api {
+  align-self: flex-start;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-color: rgba(245, 158, 11, 0.3);
+  border-left: 3px solid #f59e0b;
+  border-right: none;
+}
+
+.chat-message--system {
+  align-self: center;
+  background: rgba(241, 245, 249, 0.6);
+  border-color: rgba(148, 163, 184, 0.3);
+  font-size: 13px;
+  font-style: italic;
+  color: #64748b;
+  max-width: 90%;
+}
+
 .chat-empty {
   color: #94a3b8;
   font-size: 14px;
