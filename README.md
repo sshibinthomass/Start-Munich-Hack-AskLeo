@@ -1,165 +1,365 @@
-# Agentic Base React
+# BotBuild - AI Negotiation & Communication Assistant
 
-A full-stack chatbot application with a React frontend and FastAPI backend, supporting multiple LLM providers (Groq, OpenAI, Gemini, and Ollama).
+## 📋 Table of Contents
+- [What is BotBuild?](#what-is-botbuild)
+- [Key Features](#key-features)
+- [Prerequisites](#prerequisites)
+- [Installation Guide](#installation-guide)
+- [Configuration](#configuration)
+- [Running the Application](#running-the-application)
+- [How to Use](#how-to-use)
+- [Troubleshooting](#troubleshooting)
 
-## Features
+---
 
-- 🤖 Multiple LLM provider support (Groq, OpenAI, Gemini, Ollama)
-- 💬 Interactive chat interface with markdown rendering
-- 🎯 MCP Chatbot with tool support
-- 🔄 Session-based conversation history management
-- 📱 Responsive UI with collapsible sidebar
-- 🎨 Modern, clean design
+## 🎯 What is BotBuild?
 
-## Prerequisites
+**BotBuild** is an intelligent AI negotiation assistant built for the Start Munich Hackathon. It automates business negotiations with vendors, manages communications via email and calendar, and provides a voice-enabled interface.
 
-- **Python 3.13+** (for backend)
-- **Node.js 18+** and **npm** (for frontend)
-- **API Keys** for at least one LLM provider:
-  - Groq API key
-  - OpenAI API key
-  - Google Gemini API key
-  - (Optional) Ollama running locally
+### What It Does
 
-## Installation
+1. **Automated Negotiation**: Negotiates with vendors using strategic conversation tactics
+2. **Multi-Agent Communication**: Two AI agents can negotiate with each other automatically
+3. **Email & Calendar Integration**: Sends confirmation emails and schedules meetings after deals
+4. **Voice Interface**: Talk to the AI and hear responses with natural voices
+5. **Product Knowledge**: Knows about Victoria Arduino espresso machines
 
-### 1. Clone the repository
+---
 
-```bash
-git clone <repository-url>
-cd Agentic-Base-React
+## 🏗️ System Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│         React Frontend (Port 5173)                  │
+│  ┌──────────────────────────────────────────────┐  │
+│  │  • Chat Interface                            │  │
+│  │  • Voice Recording (Microphone)              │  │
+│  │  • Agent-to-Agent Controls                   │  │
+│  │  • Product Landing Page                      │  │
+│  └──────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+                      │ HTTP/SSE
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│         FastAPI Backend (Port 8000)                 │
+│  ┌──────────────────────────────────────────────┐  │
+│  │  Main Routes:                                │  │
+│  │  • /chat - Chat with AI                      │  │
+│  │  • /chat/agent-to-agent - Auto negotiation   │  │
+│  │  • /tts - Text-to-speech                     │  │
+│  │  • /transcribe - Speech-to-text              │  │
+│  │  • /products - Product catalog               │  │
+│  └──────────────────────────────────────────────┘  │
+│                      │                              │
+│  ┌──────────────────┴──────────────────────────┐   │
+│  │   LangGraph Agent (MCPChatbotNode)          │   │
+│  │   • Message processing                       │   │
+│  │   • Tool execution                           │   │
+│  │   • ScoutBot negotiation logic               │   │
+│  └──────────────────────────────────────────────┘   │
+│                      │                              │
+│  ┌──────────┬────────┴──────┬──────────────────┐   │
+│  │  Tools   │  LLM Provider │  External APIs   │   │
+│  │          │               │                  │   │
+│  │ • Gmail  │  • OpenAI     │  • Dunkler API   │   │
+│  │ • Calendar│   - GPT-4o   │  • ElevenLabs    │   │
+│  │ • Product │   - Whisper  │    (TTS)         │   │
+│  │   Catalog │              │                  │   │
+│  └──────────┴───────────────┴──────────────────┘   │
+└─────────────────────────────────────────────────────┘
 ```
 
-### 2. Backend Setup
+---
 
-Navigate to the backend directory:
+## ✨ Key Features
+
+### 🤖 AI Agent
+- Strategic buyer negotiation bot ("ScoutBot")
+- Keeps responses concise and professional
+- Automatically detects when a deal is reached
+- Sends emails and schedules meetings after successful deals
+
+### 📧 Communication
+- **Gmail**: Send, read, search, and reply to emails
+- **Google Calendar**: Create, list, and delete events
+
+### 🎙️ Voice
+- **Speech-to-Text**: Speak your messages using OpenAI Whisper
+- **Text-to-Speech**: Hear AI responses with ElevenLabs voices
+
+### 🏢 Product Catalog
+- Victoria Arduino espresso machines:
+  - Maverick Gravimetric (Flagship) - $32,900
+  - Eagle Tempo Digit (Mid-Range) - $19,900
+  - E1 Prima Volumetric (Entry-Level) - $7,490
+
+---
+
+## 📋 Prerequisites
+
+### Required Software
+- **Python 3.13+** - [Download](https://www.python.org/downloads/)
+- **Node.js 18+** - [Download](https://nodejs.org/)
+- **Git** - [Download](https://git-scm.com/)
+
+### Required API Keys
+
+1. **OpenAI API Key** (REQUIRED)
+   - For: GPT models and Whisper speech-to-text
+   - Get it: https://platform.openai.com/api-keys
+
+2. **ElevenLabs API Key** (REQUIRED)
+   - For: Text-to-speech
+   - Get it: https://elevenlabs.io/
+
+3. **Gmail App Password** (REQUIRED)
+   - For: Email features
+   - Setup: Google Account → Security → 2-Step Verification → App passwords
+
+4. **Google OAuth Credentials** (REQUIRED)
+   - For: Google Calendar
+   - Setup: https://console.cloud.google.com/
+   - Create OAuth 2.0 Client ID (Desktop Application)
+
+---
+
+## 🚀 Installation Guide
+
+### Step 1: Clone the Repository
+
+```bash
+git clone https://github.com/sshibinthomass/Start-Munich-Hack-AskLeo.git
+cd Start-Munich-Hack-AskLeo
+```
+
+### Step 2: Backend Setup
 
 ```bash
 cd backend
-```
 
-Install dependencies using `uv` (recommended) or `pip`:
-
-**Using uv (recommended):**
-
-```bash
+# Install dependencies
+pip install uv
 uv sync
-```
 
-**Using pip:**
-
-```bash
+# Or use pip
 pip install -e .
 ```
 
-Set up environment variables:
+### Step 3: Configure Environment
 
 ```bash
-# Copy the example.env file
+# Create .env file
 cp example.env .env
 
-# Edit .env and add your API keys
-# OPENAI_API_KEY=sk-your-key-here
-# GROQ_API_KEY=gsk_your-key-here
-# GEMINI_API_KEY=your-key-here
-# OLLAMA_BASE_URL=http://localhost:11434 (optional)
+# Edit .env with your API keys
+notepad .env  # Windows
+# nano .env   # Mac/Linux
 ```
 
-### 3. Frontend Setup
+**Fill in your `.env` file:**
 
-Navigate to the frontend directory:
+```bash
+# OpenAI (REQUIRED)
+OPENAI_API_KEY=sk-proj-YOUR_KEY_HERE
+
+# ElevenLabs (REQUIRED)
+ELEVENLABS_API_KEY=sk_YOUR_KEY_HERE
+
+# Gmail (REQUIRED)
+USER_GOOGLE_EMAIL=your-email@gmail.com
+GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
+
+# Google Calendar OAuth (REQUIRED)
+GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=GOCSPX-your-secret
+
+# MCP Server Paths (Update with your actual paths)
+MCP_FOLDER_DIR=C:\Users\YourUsername\Start-Munich-Hack-AskLeo\backend\langgraph_agent\mcps\local_servers\dataflow.py
+MCP_FILESYSTEM_DIR=C:\Users\YourUsername\Start-Munich-Hack-AskLeo\backend\langgraph_agent\mcps\local_servers\dataflow.py
+MCP_PRODUCT_DIR=C:\Users\YourUsername\Start-Munich-Hack-AskLeo\backend\langgraph_agent\mcps\local_servers\products.py
+```
+
+### Step 4: Setup Google Calendar OAuth
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project
+3. Enable **Google Calendar API**
+4. Create **OAuth 2.0 Client ID** (choose "Desktop app")
+5. Download the JSON file
+6. Save it as `backend/client_secret_<client-id>.apps.googleusercontent.com.json`
+
+### Step 5: Frontend Setup
 
 ```bash
 cd ../react_frontend
-```
-
-Install dependencies:
-
-```bash
 npm install
 ```
 
-## Running the Application
+---
 
-### Start the Backend
+## 🏃 Running the Application
 
-From the `backend` directory:
+### Open Two Terminals
 
+**Terminal 1 - Backend:**
 ```bash
-# Using uv
+cd backend
 uv run uvicorn main:app --reload --port 8000
-
-# Or using python directly
-python -m uvicorn main:app --reload --port 8000
 ```
 
-The backend will be available at `http://localhost:8000`
-
-### Start the Frontend
-
-From the `react_frontend` directory:
-
+**Terminal 2 - Frontend:**
 ```bash
+cd react_frontend
 npm run dev
 ```
 
-The frontend will be available at `http://localhost:5173`
+### Access the Application
 
-## Project Structure
+Open your browser: **http://localhost:5173**
 
+---
+
+## 🎯 How to Use
+
+### Basic Chat
+
+1. Select "OpenAI" provider and a model (e.g., "GPT-4o Mini")
+2. Type your message
+3. Press Enter or click Send
+4. Watch the AI respond in real-time
+
+**Example:**
 ```
-Agentic-Base-React/
-├── backend/
-│   ├── main.py                 # FastAPI application
-│   ├── configurations.py       # Configuration settings
-│   ├── example.env             # Environment variables template
-│   ├── pyproject.toml          # Python dependencies
-│   └── langgraph_agent/
-│       ├── graphs/             # LangGraph graph definitions
-│       ├── llms/               # LLM provider implementations
-│       ├── nodes/              # Graph nodes
-│       ├── states/             # State definitions
-│       └── tools/              # Available tools
-├── react_frontend/
-│   ├── src/
-│   │   ├── App.jsx             # Main React component
-│   │   ├── App.css             # Styles
-│   │   ├── components/         # React components
-│   │   ├── constants.js        # Constants and configurations
-│   │   └── utils/              # Utility functions
-│   ├── package.json            # Node.js dependencies
-│   └── vite.config.js          # Vite configuration
-└── README.md                   # This file
+You: "What Victoria Arduino machines are available?"
+BotBuild: "We have three models: Maverick ($32,900), 
+          Eagle Tempo ($19,900), and E1 Prima ($7,490)."
 ```
 
-## Usage
+### Voice Chat
 
-1. **Configure Settings**: The app uses MCP Chatbot by default with tool support
-2. **Choose a Provider**: Select your preferred LLM provider (Groq, OpenAI, Gemini, or Ollama)
-3. **Select a Model**: Pick a specific model from the selected provider
-4. **Start Chatting**: Type your message and press Enter or click Send
-5. **Clear Conversation**: Use the red "Clear" button to reset the conversation history
+1. Click the **microphone icon**
+2. Speak your message
+3. Click stop when done
+4. Message appears automatically
+5. Enable "Voice Output" to hear responses
 
-## API Endpoints
+### Agent-to-Agent Negotiation
 
-- `GET /health` - Health check endpoint
-- `POST /chat` - Send a chat message
-- `POST /chat/reset` - Reset conversation history
+1. Click **"Agent-to-Agent"** tab
+2. Choose conversation mode:
+   - **Fixed**: Runs for exact number of exchanges (default: 11)
+   - **Until Deal**: Runs until deal detected (max: 15)
+3. Click **"Start Agent Negotiation"**
+4. Watch BotBuild and Dunkler negotiate automatically
 
-## Development
+**When deal is reached:**
+- ✅ Confirmation email sent to vendor
+- ✅ Meeting scheduled (2 days later at 10 AM)
 
-### Backend Development
+### Using Tools
 
-The backend uses FastAPI with LangGraph for building stateful, multi-actor applications with LLMs.
+The AI can automatically:
+- **Send emails** - "Send an email to vendor@example.com"
+- **Check emails** - "Do I have any new emails?"
+- **Schedule meetings** - "Schedule a meeting tomorrow at 2 PM"
+- **Get product info** - "Tell me about the Maverick machine"
 
-### Frontend Development
+---
 
-The frontend is built with React and Vite for fast development and hot module replacement.
+## 🐛 Troubleshooting
 
-## License
+### Backend Won't Start
 
-[Add your license here]
+**Error**: `ModuleNotFoundError`
 
-## Contributing
+**Solution**:
+```bash
+cd backend
+uv sync
+```
 
-[Add contribution guidelines here]
+### Gmail Not Working
+
+**Error**: `Authentication failed`
+
+**Solution**:
+- Use Gmail App Password (NOT regular password)
+- Generate at: Google Account → Security → App passwords
+- Format: `GMAIL_APP_PASSWORD=xxxxnxxxnxxxnxxxx` (no spaces)
+
+### Calendar Authentication Keeps Opening Browser
+
+**Solution**:
+1. Delete `calendar_token.json` if it exists
+2. Make sure OAuth client is "Desktop App" type
+3. Complete OAuth flow once
+4. Token will be saved automatically
+
+### Voice Not Working
+
+**Solution**:
+- **TTS**: Check `ELEVENLABS_API_KEY` is valid
+- **STT**: Check `OPENAI_API_KEY` is valid
+- Check browser microphone permissions
+
+### MCP Tools Not Loading
+
+**Solution**:
+- Use **absolute paths** in `.env` for MCP_*_DIR variables
+- Example (Windows): `C:\Users\...\backend\langgraph_agent\mcps\local_servers\products.py`
+- Example (Mac/Linux): `/Users/.../backend/langgraph_agent/mcps/local_servers/products.py`
+
+---
+
+## 📊 Product Catalog
+
+### Victoria Arduino Espresso Machines
+
+**1. Maverick Gravimetric 3gr**
+- Price: $32,900 (negotiable to $29,610)
+- 3 groups, gravimetric extraction
+- 5 units in stock, 5-day delivery
+
+**2. Eagle Tempo Digit 3gr**
+- Price: $19,900 (negotiable to $17,900)
+- 3 groups, digital dosing
+- 12 units in stock, 3-day delivery
+
+**3. E1 Prima Volumetric T3**
+- Price: $7,490 (negotiable to $6,990)
+- 1 group, compact design
+- 18 units in stock, 2-day delivery
+
+---
+
+## 📝 Example Usage
+
+### Negotiation Example
+```
+You: "I need 20 Maverick machines. Can you offer a discount?"
+BotBuild: "For 20 units at $32,900 each, I can offer 8% off. 
+          That's $30,268 per unit. Deal?"
+You: "Deal! Send me a confirmation email."
+[Tool executes: send_email]
+BotBuild: "Confirmation sent! Meeting scheduled for 2 days from now."
+```
+
+### Email Example
+```
+You: "Check my emails"
+[Tool executes: list_emails]
+BotBuild: "You have 3 new emails: 
+          1. Order confirmation from supplier
+          2. Invoice from vendor..."
+```
+
+---
+
+## 📞 Support
+
+- **GitHub**: [Start-Munich-Hack-AskLeo](https://github.com/sshibinthomass/Start-Munich-Hack-AskLeo)
+- **Issues**: Open an issue on GitHub
+
+---
+
+*Built for Start Munich Hackathon 2025*
