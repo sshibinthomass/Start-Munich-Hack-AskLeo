@@ -49,7 +49,7 @@
 │  │  • /transcribe - Speech-to-text              │  │
 │  │  • /products - Product catalog               │  │
 │  └──────────────────────────────────────────────┘  │
-│                      │                              │
+│                     │                             │
 │  ┌──────────────────┴──────────────────────────┐   │
 │  │   LangGraph Agent (MCPChatbotNode)          │   │
 │  │   • Message processing                       │   │
@@ -61,7 +61,7 @@
 │  │  Tools   │  LLM Provider │  External APIs   │   │
 │  │          │               │                  │   │
 │  │ • Gmail  │  • OpenAI     │  • Dunkler API   │   │
-│  │ • Calendar│   - GPT-4.1   │  • ElevenLabs    │   │
+│  │ • Calendar│  - GPT-4.1   │  • ElevenLabs    │   │
 │  │ • Product │   - Whisper  │    (TTS)         │   │
 │  │   Catalog │              │                  │   │
 │  └──────────┴───────────────┴──────────────────┘   │
