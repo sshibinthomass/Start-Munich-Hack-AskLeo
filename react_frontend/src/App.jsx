@@ -40,6 +40,11 @@ export default function App() {
   const [initialMessage, setInitialMessage] = useState("hello");
   const [personalityTraits, setPersonalityTraits] = useState("Calm, composed, persuasive, and highly strategic");
   const [negotiationStrategy, setNegotiationStrategy] = useState("Start with a smaller order and request a justified discount");
+  const [selectedProduct, setSelectedProduct] = useState("Maverick");
+  const [availableProducts, setAvailableProducts] = useState([]);
+  const [numberOfUnits, setNumberOfUnits] = useState(5);
+  const [minDiscount, setMinDiscount] = useState(5);
+  const [maxDiscount, setMaxDiscount] = useState(20);
 
   const normalizeToolEntry = (entry) => {
     if (!entry) return null;
@@ -109,6 +114,26 @@ export default function App() {
       localStorage.setItem("chat_session_id", id);
       setSessionId(id);
     }
+  }, []);
+
+  // Fetch available products for dropdown
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/products`);
+        if (response.ok) {
+          const products = await response.json();
+          setAvailableProducts(products);
+          // Set default product if not set
+          if (products.length > 0 && selectedProduct === "Maverick" && !products.find(p => p.name === selectedProduct)) {
+            setSelectedProduct(products[0].name);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch products:", err);
+      }
+    };
+    fetchProducts();
   }, []);
 
   useEffect(() => {
@@ -515,6 +540,10 @@ export default function App() {
           voice_output_enabled: voiceOutputEnabled,
           personality_traits: personalityTraitsList,
           negotiation_strategy: negotiationStrategyList,
+          product_name: selectedProduct,
+          number_of_units: numberOfUnits,
+          min_discount: minDiscount,
+          max_discount: maxDiscount,
         }),
       });
 
@@ -837,6 +866,15 @@ export default function App() {
         onPersonalityTraitsChange={setPersonalityTraits}
         negotiationStrategy={negotiationStrategy}
         onNegotiationStrategyChange={setNegotiationStrategy}
+        selectedProduct={selectedProduct}
+        onSelectedProductChange={setSelectedProduct}
+        availableProducts={availableProducts}
+        numberOfUnits={numberOfUnits}
+        onNumberOfUnitsChange={setNumberOfUnits}
+        minDiscount={minDiscount}
+        onMinDiscountChange={setMinDiscount}
+        maxDiscount={maxDiscount}
+        onMaxDiscountChange={setMaxDiscount}
       />
     </div>
   );

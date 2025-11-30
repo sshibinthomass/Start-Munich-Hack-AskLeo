@@ -30,6 +30,15 @@ export function FloatingChat({
   onPersonalityTraitsChange,
   negotiationStrategy,
   onNegotiationStrategyChange,
+  selectedProduct,
+  onSelectedProductChange,
+  availableProducts,
+  numberOfUnits,
+  onNumberOfUnitsChange,
+  minDiscount,
+  onMinDiscountChange,
+  maxDiscount,
+  onMaxDiscountChange,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -208,6 +217,84 @@ export function FloatingChat({
               />
               <p className="floating-chat__settings-note">
                 This message will be sent by Lio to start the conversation with BrewBot.
+              </p>
+
+              <div className="floating-chat__settings-divider"></div>
+
+              <label className="floating-chat__settings-label">
+                Product to Purchase
+              </label>
+              <select
+                value={selectedProduct}
+                onChange={(e) => onSelectedProductChange(e.target.value)}
+                className="floating-chat__settings-select"
+              >
+                {availableProducts.map((product) => (
+                  <option key={product.id} value={product.name}>
+                    {product.name} - {product.category}
+                  </option>
+                ))}
+              </select>
+              <p className="floating-chat__settings-note">
+                Select the product that Lio should negotiate to purchase.
+              </p>
+
+              <div className="floating-chat__settings-divider"></div>
+
+              <label className="floating-chat__settings-label">
+                Number of Units: {numberOfUnits}
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="50"
+                value={numberOfUnits}
+                onChange={(e) => onNumberOfUnitsChange(parseInt(e.target.value))}
+                className="floating-chat__settings-slider"
+              />
+              <p className="floating-chat__settings-note">
+                The quantity of units Lio should negotiate to purchase.
+              </p>
+
+              <div className="floating-chat__settings-divider"></div>
+
+              <label className="floating-chat__settings-label">
+                Discount Range: {minDiscount}% - {maxDiscount}%
+              </label>
+              <div className="floating-chat__settings-slider-container">
+                <label className="floating-chat__settings-slider-label">Min: {minDiscount}%</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="50"
+                  value={minDiscount}
+                  onChange={(e) => {
+                    const newMin = parseInt(e.target.value);
+                    if (newMin <= maxDiscount) {
+                      onMinDiscountChange(newMin);
+                    }
+                  }}
+                  className="floating-chat__settings-slider"
+                />
+              </div>
+              <div className="floating-chat__settings-slider-container">
+                <label className="floating-chat__settings-slider-label">Max: {maxDiscount}%</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="50"
+                  value={maxDiscount}
+                  onChange={(e) => {
+                    const newMax = parseInt(e.target.value);
+                    if (newMax >= minDiscount) {
+                      onMaxDiscountChange(newMax);
+                    }
+                  }}
+                  className="floating-chat__settings-slider"
+                />
+              </div>
+              <p className="floating-chat__settings-note">
+                Lio will start negotiating from {maxDiscount}% discount and aim to reach {minDiscount}% (best price). Once {minDiscount}% is achieved, the deal is complete.
               </p>
 
               <div className="floating-chat__settings-divider"></div>

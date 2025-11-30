@@ -183,6 +183,10 @@ class AgentToAgentRequest(BaseModel):
     voice_output_enabled: Optional[bool] = False
     personality_traits: Optional[List[str]] = None
     negotiation_strategy: Optional[List[str]] = None
+    product_name: Optional[str] = None
+    number_of_units: Optional[int] = 5
+    min_discount: Optional[float] = 5.0
+    max_discount: Optional[float] = 20.0
 
 
 class BrewBotChatRequest(BaseModel):
@@ -597,6 +601,10 @@ async def get_mcp_chatbot_response(
     use_case: str = "mcp_chatbot",
     personality_traits: Optional[List[str]] = None,
     negotiation_strategy: Optional[List[str]] = None,
+    product_name: Optional[str] = None,
+    number_of_units: int = 5,
+    min_discount: float = 5.0,
+    max_discount: float = 20.0,
 ) -> str:
     """
     Helper function to get a response from the MCP chatbot.
@@ -654,6 +662,10 @@ async def get_mcp_chatbot_response(
     system_prompt = get_scout_system_prompt(
         personality_traits=personality_traits,
         negotiation_strategy=negotiation_strategy,
+        product_name=product_name,
+        number_of_units=number_of_units,
+        min_discount=min_discount,
+        max_discount=max_discount,
     )
     messages = [SystemMessage(content=system_prompt)]
     messages.extend(session_store[session_key])
@@ -775,6 +787,10 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
         )
         personality_traits = request.personality_traits
         negotiation_strategy = request.negotiation_strategy
+        product_name = request.product_name
+        number_of_units = request.number_of_units or 5
+        min_discount = request.min_discount or 5.0
+        max_discount = request.max_discount or 20.0
 
         # Use separate session ID for agent-to-agent
         agent_session_id = f"agent-to-agent-{os.urandom(8).hex()}"
@@ -787,7 +803,18 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
                 yield f"data: {json.dumps({'type': 'status', 'message': 'BrewBot agent initialized'})}\n\n"
 
                 # Start with MCP chatbot sending the initial message
-                initial_message = request.initial_message or "hello"
+                # If initial message is generic, generate one with configured values
+                user_initial_message = request.initial_message or "hello"
+                if user_initial_message.lower().strip() in [
+                    "hello",
+                    "hi",
+                    "hey",
+                    "start",
+                ]:
+                    # Auto-generate initial message with configured values
+                    initial_message = f"I'm interested in purchasing {number_of_units} units of {product_name}. Could you offer a {max_discount}% discount for this order?"
+                else:
+                    initial_message = user_initial_message
                 yield f"data: {json.dumps({'type': 'agent_message', 'agent': 'mcp_chatbot', 'message': initial_message})}\n\n"
 
                 # Helper function to check if a deal has been reached using Lio's judgment
@@ -824,12 +851,18 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
                         # Ask Lio to evaluate if a deal has been reached
                         evaluation_prompt = f"""You are evaluating a negotiation conversation. Based on the following exchange, determine if both parties have reached a mutual agreement or deal.
 
-Important: A deal means BOTH parties have explicitly agreed to specific terms, prices, quantities, or conditions. Casual conversation, questions, or one-sided statements do NOT constitute a deal.
+Important: A deal means BOTH parties have explicitly agreed to specific terms, prices, quantities, or conditions. 
+CRITICAL: If a discount of {min_discount}% or better has been agreed upon, the deal is COMPLETE and you must respond "YES".
+If the discount is less than {min_discount}%, respond "NO" - the negotiation must continue.
 
 Conversation:
 {conversation_context}
 
-Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clear deal/agreement has been reached, or "NO" if not yet."""
+Analyze this conversation carefully. Check if:
+1. Both parties have explicitly agreed to terms
+2. The discount percentage agreed is {min_discount}% or better (best price achieved)
+
+Respond with ONLY one word: "YES" if a clear deal/agreement has been reached with {min_discount}% or better discount, or "NO" if not yet."""
 
                         # Get Lio's evaluation using a separate session to avoid interfering with main conversation
                         lio_evaluation = await get_mcp_chatbot_response(
@@ -838,6 +871,12 @@ Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clea
                             provider,
                             selected_llm,
                             "mcp_chatbot",
+                            personality_traits=personality_traits,
+                            negotiation_strategy=negotiation_strategy,
+                            product_name=product_name,
+                            number_of_units=number_of_units,
+                            min_discount=min_discount,
+                            max_discount=max_discount,
                         )
 
                         # Check if Lio's response indicates a deal
@@ -949,6 +988,10 @@ Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clea
                             elif remaining <= 6:
                                 message_with_context = f"[Time is running out: {remaining} exchanges left. Let's work towards closing the deal.] {external_response}"
 
+                        # Add quantity reminder to prevent drift - always remind Lio of the fixed quantity
+                        quantity_reminder = f"\n\n⚠️ CRITICAL REMINDER: You are negotiating for EXACTLY {number_of_units} units. NEVER use any other quantity like 5, 10, etc. ALWAYS and ONLY use {number_of_units} units in your response."
+                        message_with_context = message_with_context + quantity_reminder
+
                         mcp_response = await get_mcp_chatbot_response(
                             message_with_context,
                             agent_session_id,
@@ -957,6 +1000,10 @@ Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clea
                             "mcp_chatbot",
                             personality_traits=personality_traits,
                             negotiation_strategy=negotiation_strategy,
+                            product_name=product_name,
+                            number_of_units=number_of_units,
+                            min_discount=min_discount,
+                            max_discount=max_discount,
                         )
                         yield f"data: {json.dumps({'type': 'agent_message', 'agent': 'mcp_chatbot', 'message': mcp_response})}\n\n"
                         current_message = mcp_response
@@ -1059,7 +1106,7 @@ Lio (AI Negotiation Assistant)
                             location="Virtual Meeting",
                             attendees=vendor_email,
                         )
-                        yield f"data: {json.dumps({'type': 'status', 'message': f'Meeting scheduled: {meeting_result}'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'status', 'message': 'A calendar event has been set to delivery'})}\n\n"
 
                     except Exception as e:
                         # Don't fail the whole request if email/meeting fails
