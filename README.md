@@ -199,7 +199,7 @@ npm install
 **Terminal 1 - Backend:**
 ```bash
 cd backend
-uv run uvicorn main:app --reload --port 8000
+uv run python main.py
 ```
 
 **Terminal 2 - Frontend:**
