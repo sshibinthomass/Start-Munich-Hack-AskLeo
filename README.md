@@ -1,14 +1,15 @@
 # BotBuild - AI Negotiation & Communication Assistant
 
 ## 📋 Table of Contents
-- [What is BotBuild?](#what-is-botbuild)
-- [Key Features](#key-features)
-- [Prerequisites](#prerequisites)
-- [Installation Guide](#installation-guide)
-- [Configuration](#configuration)
-- [Running the Application](#running-the-application)
-- [How to Use](#how-to-use)
-- [Troubleshooting](#troubleshooting)
+- [What is BotBuild?](#-what-is-botbuild)
+- [Key Features](#-key-features)
+- [System Architecture](#️-system-architecture)
+- [Prerequisites](#-prerequisites)
+- [Installation Guide](#-installation-guide)
+- [Configuration](#step-3-configure-environment)
+- [Running the Application](#-running-the-application)
+- [How to Use](#-how-to-use)
+- [Troubleshooting](#-troubleshooting)
 
 ---
 
