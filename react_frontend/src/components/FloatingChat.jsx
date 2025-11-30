@@ -20,6 +20,52 @@ export function FloatingChat({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [showToolHistory, setShowToolHistory] = useState(false);
+  const [expandedToolIndex, setExpandedToolIndex] = useState(null);
+
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return "";
+    try {
+      return new Date(timestamp).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    } catch (err) {
+      return timestamp;
+    }
+  };
+
+  const formatDuration = (duration) => {
+    if (typeof duration !== "number" || Number.isNaN(duration)) return "—";
+    if (duration < 1000) return `${duration.toFixed(0)} ms`;
+    return `${(duration / 1000).toFixed(2)} s`;
+  };
+
+  const stringifyArgs = (args) => {
+    if (!args || typeof args !== "object") return "None";
+    try {
+      return JSON.stringify(args, null, 2);
+    } catch (err) {
+      return String(args);
+    }
+  };
+
+  const toolIndicatorActive = loading || !toolStatusComplete;
+  const lastCompletedTool =
+    toolCallHistory.length > 0 ? toolCallHistory[toolCallHistory.length - 1] : null;
+  const displayedTool = toolIndicatorActive
+    ? latestToolCall || lastCompletedTool
+    : lastCompletedTool;
+  const displayedName = displayedTool?.name;
+  const displayedTime = displayedTool?.timestamp
+    ? formatTimestamp(displayedTool.timestamp)
+    : null;
+  const toolIndicatorText = displayedName
+    ? `${displayedName}${displayedTime ? ` • ${displayedTime}` : ""}`
+    : toolIndicatorActive
+    ? "Waiting for tool call…"
+    : "No tools called";
 
   const toggleChat = () => {
     if (isOpen) {
@@ -40,8 +86,38 @@ export function FloatingChat({
       {isOpen && (
         <div className={`floating-chat__window ${isMinimized ? "floating-chat__window--minimized" : ""}`}>
           <div className="floating-chat__header">
-            <span className="floating-chat__title">{useCaseLabel || "Chat Assistant"}</span>
+            <div className="floating-chat__header-left">
+              <span className="floating-chat__title">{useCaseLabel || "Chat Assistant"}</span>
+              {toolCallHistory.length > 0 && (
+                <button
+                  type="button"
+                  className={`floating-chat__tool-indicator ${toolIndicatorActive ? "floating-chat__tool-indicator--active" : ""}`}
+                  onClick={() => setShowToolHistory(!showToolHistory)}
+                  title={toolIndicatorText}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                    <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                    <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                  </svg>
+                  <span className="floating-chat__tool-count">{toolCallHistory.length}</span>
+                </button>
+              )}
+            </div>
             <div className="floating-chat__controls">
+              <button
+                type="button"
+                className="floating-chat__clear"
+                onClick={onClear}
+                disabled={loading || resetting || conversation.length === 0}
+                title="Clear conversation"
+                aria-label="Clear conversation"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M3 6H5H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                </svg>
+              </button>
               <button
                 type="button"
                 className="floating-chat__minimize"
@@ -60,6 +136,72 @@ export function FloatingChat({
               </button>
             </div>
           </div>
+          {!isMinimized && showToolHistory && toolCallHistory.length > 0 && (
+            <div className="floating-chat__tool-history">
+              <div className="floating-chat__tool-history-header">
+                <span>Tool Calls ({toolCallHistory.length})</span>
+                <button
+                  type="button"
+                  className="floating-chat__tool-history-close"
+                  onClick={() => setShowToolHistory(false)}
+                  aria-label="Close tool history"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="floating-chat__tool-history-list">
+                {toolCallHistory.map((tool, index) => (
+                  <div key={`${tool?.name ?? "tool"}-${index}`} className="floating-chat__tool-history-item">
+                    <button
+                      type="button"
+                      className={`floating-chat__tool-history-item-button ${expandedToolIndex === index ? "floating-chat__tool-history-item-button--expanded" : ""}`}
+                      onClick={() => setExpandedToolIndex(expandedToolIndex === index ? null : index)}
+                    >
+                      <span className="floating-chat__tool-history-index">{index + 1}.</span>
+                      <span className="floating-chat__tool-history-name">{tool?.name ?? "Unknown tool"}</span>
+                      {tool?.timestamp && (
+                        <span className="floating-chat__tool-history-time">{formatTimestamp(tool.timestamp)}</span>
+                      )}
+                    </button>
+                    {expandedToolIndex === index && (
+                      <div className="floating-chat__tool-history-details">
+                        <div className="floating-chat__tool-history-detail-row">
+                          <div className="floating-chat__tool-history-label-row">
+                            <span className="floating-chat__tool-history-label">Arguments:</span>
+                            <button
+                              type="button"
+                              className="floating-chat__tool-history-copy"
+                              onClick={() => navigator.clipboard.writeText(stringifyArgs(tool?.args))}
+                            >
+                              Copy
+                            </button>
+                          </div>
+                          <pre className="floating-chat__tool-history-code">{stringifyArgs(tool?.args)}</pre>
+                        </div>
+                        <div className="floating-chat__tool-history-detail-row">
+                          <div className="floating-chat__tool-history-label-row">
+                            <span className="floating-chat__tool-history-label">Response:</span>
+                            <button
+                              type="button"
+                              className="floating-chat__tool-history-copy"
+                              onClick={() => navigator.clipboard.writeText(tool?.response || "")}
+                            >
+                              Copy
+                            </button>
+                          </div>
+                          <pre className="floating-chat__tool-history-code">{tool?.response || "No response"}</pre>
+                        </div>
+                        <div className="floating-chat__tool-history-detail-row floating-chat__tool-history-detail-row--inline">
+                          <span className="floating-chat__tool-history-label">Response Time:</span>
+                          <span>{formatDuration(tool?.duration_ms)}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {!isMinimized && (
             <div className="floating-chat__content">
               <ChatWindow
