@@ -1,19 +1,19 @@
 [
   {
-    "vendor": "Filippo Dunkler - Victoria Arduino",
+    "vendor": "Filippo Dunkler - BrewBot",
     "currency": "USD",
     "id": "va_prod_001",
     "name": "Maverick",
     "category": "Flagship Espresso Machine",
-    "brand": "Victoria Arduino",
+    "brand": "BrewBot",
     "color": "Black",
     "versions": [
       {
         "version": "Gravimetric 3gr",
         "productCode": "MMAVERGVT3030048",
-        "description": "Victoria Arduino's top flagship machine featuring gravimetric technology, ultra-precise extraction control, and modern angular design. Ideal for high-end specialty cafés seeking world-class performance.",
+        "description": "BrewBot's top flagship machine featuring gravimetric technology, ultra-precise extraction control, and modern angular design. Ideal for high-end specialty cafés seeking world-class performance.",
         "price": 32900.0,
-        "minPrice": 29610.0,
+        "minPrice": 30000.0,
         "maxPrice": 32900.0,
         "deliveryTimeDays": 5,
         "warranty": "2 years",
@@ -38,7 +38,82 @@
           "bodyMaterial": "Steelux stainless steel",
           "energySaving": true
         },
-        "images": ["/api/images/img2.png"]
+        "images": ["/api/images/img2.png"],
+        "priceHistory": [
+          { "date": "2024-01-01", "price": 32900.0 },
+          { "date": "2024-02-01", "price": 33100.0 },
+          { "date": "2024-03-01", "price": 32800.0 },
+          { "date": "2024-04-01", "price": 33000.0 },
+          { "date": "2024-05-01", "price": 32700.0 },
+          { "date": "2024-06-01", "price": 32900.0 },
+          { "date": "2024-07-01", "price": 32600.0 },
+          { "date": "2024-08-01", "price": 32800.0 },
+          { "date": "2024-09-01", "price": 32500.0 },
+          { "date": "2024-10-01", "price": 32700.0 },
+          { "date": "2024-11-01", "price": 32400.0 },
+          { "date": "2024-12-01", "price": 32600.0 },
+          { "date": "2025-01-01", "price": 32300.0 },
+          { "date": "2025-02-01", "price": 32500.0 },
+          { "date": "2025-03-01", "price": 32200.0 },
+          { "date": "2025-04-01", "price": 32400.0 },
+          { "date": "2025-05-01", "price": 32100.0 },
+          { "date": "2025-06-01", "price": 32300.0 },
+          { "date": "2025-07-01", "price": 32000.0 },
+          { "date": "2025-08-01", "price": 32200.0 },
+          { "date": "2025-09-01", "price": 31900.0 },
+          { "date": "2025-10-01", "price": 32100.0 },
+          { "date": "2025-11-01", "price": 32000.0 }
+        ],
+        "reviewsList": [
+          {
+            "author": "Sarah Chen",
+            "rating": 5,
+            "date": "2024-01-15",
+            "comment": "Absolutely outstanding machine! The gravimetric technology is a game-changer. Our baristas love the precision and consistency. Worth every penny for a high-end café."
+          },
+          {
+            "author": "Marcus Rodriguez",
+            "rating": 5,
+            "date": "2024-02-03",
+            "comment": "Best espresso machine we've ever owned. The multi-boiler system ensures perfect temperature control. The build quality is exceptional and it looks stunning in our café."
+          },
+          {
+            "author": "Emily Watson",
+            "rating": 4,
+            "date": "2024-02-18",
+            "comment": "Great machine overall. The gravimetric extraction is impressive, though it took our team a few days to fully master. Customer service was helpful during setup."
+          },
+          {
+            "author": "David Kim",
+            "rating": 5,
+            "date": "2024-03-01",
+            "comment": "Incredible precision and reliability. We've been using it for 2 months now with zero issues. The real-time weight measurement feature is fantastic for quality control."
+          },
+          {
+            "author": "Lisa Anderson",
+            "rating": 5,
+            "date": "2024-03-12",
+            "comment": "Perfect for our specialty coffee shop. The angular design is modern and the performance is top-notch. Highly recommend for serious coffee professionals."
+          },
+          {
+            "author": "Thomas Miller",
+            "rating": 2,
+            "date": "2024-01-25",
+            "comment": "Very disappointed with this purchase. The machine arrived with a faulty gravimetric sensor and we had to wait 3 weeks for a replacement part. For this price, I expected better quality control. Customer service was slow to respond."
+          },
+          {
+            "author": "Rachel Park",
+            "rating": 3,
+            "date": "2024-02-10",
+            "comment": "The machine works okay, but the learning curve is much steeper than advertised. Our baristas struggled with the gravimetric controls for weeks. Also, the maintenance costs are higher than expected. Not worth the premium price tag in my opinion."
+          },
+          {
+            "author": "Kevin O'Brien",
+            "rating": 1,
+            "date": "2024-03-20",
+            "comment": "Terrible experience. The machine broke down after just 2 months of use. The warranty process was a nightmare and we were without a working machine for over a month. Would not recommend to anyone. Save your money."
+          }
+        ]
       }
     ]
   },
@@ -46,7 +121,7 @@
     "id": "va_prod_002",
     "name": "Eagle Tempo",
     "category": "Mid-Range Espresso Machine",
-    "brand": "Victoria Arduino",
+    "brand": "BrewBot",
     "color": "Black",
     "versions": [
       {
@@ -78,7 +153,82 @@
           "dimensions": "950mm x 620mm x 520mm",
           "weight": "72kg"
         },
-        "images": ["/api/images/img3.png"]
+        "images": ["/api/images/img3.png"],
+        "priceHistory": [
+          { "date": "2024-01-01", "price": 19900.0 },
+          { "date": "2024-02-01", "price": 20000.0 },
+          { "date": "2024-03-01", "price": 19800.0 },
+          { "date": "2024-04-01", "price": 19950.0 },
+          { "date": "2024-05-01", "price": 19750.0 },
+          { "date": "2024-06-01", "price": 19900.0 },
+          { "date": "2024-07-01", "price": 19600.0 },
+          { "date": "2024-08-01", "price": 19800.0 },
+          { "date": "2024-09-01", "price": 19500.0 },
+          { "date": "2024-10-01", "price": 19700.0 },
+          { "date": "2024-11-01", "price": 19400.0 },
+          { "date": "2024-12-01", "price": 19600.0 },
+          { "date": "2025-01-01", "price": 19300.0 },
+          { "date": "2025-02-01", "price": 19500.0 },
+          { "date": "2025-03-01", "price": 19200.0 },
+          { "date": "2025-04-01", "price": 19400.0 },
+          { "date": "2025-05-01", "price": 19100.0 },
+          { "date": "2025-06-01", "price": 19300.0 },
+          { "date": "2025-07-01", "price": 19000.0 },
+          { "date": "2025-08-01", "price": 19200.0 },
+          { "date": "2025-09-01", "price": 18900.0 },
+          { "date": "2025-10-01", "price": 19100.0 },
+          { "date": "2025-11-01", "price": 19000.0 }
+        ],
+        "reviewsList": [
+          {
+            "author": "James Thompson",
+            "rating": 5,
+            "date": "2024-01-20",
+            "comment": "Excellent mid-range option! The digit controls are intuitive and the workflow is smooth. Great value for money and perfect for our busy café."
+          },
+          {
+            "author": "Maria Garcia",
+            "rating": 4,
+            "date": "2024-02-05",
+            "comment": "Love the minimalist design and efficiency. The thermal system works great. Only minor complaint is the learning curve for new staff, but overall very satisfied."
+          },
+          {
+            "author": "Robert Lee",
+            "rating": 5,
+            "date": "2024-02-22",
+            "comment": "Solid machine with consistent performance. The ergonomic layout makes it easy to work with during peak hours. Stainless steel frame is durable and looks professional."
+          },
+          {
+            "author": "Jennifer Brown",
+            "rating": 4,
+            "date": "2024-03-05",
+            "comment": "Good machine for the price point. The digit electronic dosing is accurate and the build quality is solid. Would recommend for mid-volume operations."
+          },
+          {
+            "author": "Michael Wilson",
+            "rating": 5,
+            "date": "2024-03-18",
+            "comment": "Perfect balance of features and price. The matte black finish looks sleek and the machine handles high volume well. Very happy with this purchase!"
+          },
+          {
+            "author": "Patricia Davis",
+            "rating": 2,
+            "date": "2024-01-30",
+            "comment": "The digit controls are not as intuitive as claimed. We've had several issues with inconsistent dosing and the thermal system seems to struggle during peak hours. For the price, I expected better reliability."
+          },
+          {
+            "author": "Brian Foster",
+            "rating": 3,
+            "date": "2024-02-15",
+            "comment": "Decent machine but has some quirks. The electronic dosing sometimes malfunctions and requires frequent recalibration. The minimalist design is nice but functionality could be better. Average at best."
+          },
+          {
+            "author": "Nicole Martinez",
+            "rating": 2,
+            "date": "2024-03-08",
+            "comment": "Not impressed. The machine is loud, especially the steam boiler. The ergonomic layout isn't as good as advertised - our baristas find it cramped. Would look for alternatives next time."
+          }
+        ]
       }
     ]
   },
@@ -86,7 +236,7 @@
     "id": "va_prod_003",
     "name": "E1 Prima",
     "category": "Entry-Level Compact Espresso Machine",
-    "brand": "Victoria Arduino",
+    "brand": "BrewBot",
     "color": "White",
     "versions": [
       {
@@ -117,7 +267,82 @@
           "dimensions": "411mm x 510mm x 510mm",
           "weight": "37kg"
         },
-        "images": ["/api/images/img1.png"]
+        "images": ["/api/images/img1.png"],
+        "priceHistory": [
+          { "date": "2024-01-01", "price": 7490.0 },
+          { "date": "2024-02-01", "price": 7520.0 },
+          { "date": "2024-03-01", "price": 7470.0 },
+          { "date": "2024-04-01", "price": 7500.0 },
+          { "date": "2024-05-01", "price": 7460.0 },
+          { "date": "2024-06-01", "price": 7490.0 },
+          { "date": "2024-07-01", "price": 7450.0 },
+          { "date": "2024-08-01", "price": 7480.0 },
+          { "date": "2024-09-01", "price": 7440.0 },
+          { "date": "2024-10-01", "price": 7470.0 },
+          { "date": "2024-11-01", "price": 7430.0 },
+          { "date": "2024-12-01", "price": 7460.0 },
+          { "date": "2025-01-01", "price": 7420.0 },
+          { "date": "2025-02-01", "price": 7450.0 },
+          { "date": "2025-03-01", "price": 7410.0 },
+          { "date": "2025-04-01", "price": 7440.0 },
+          { "date": "2025-05-01", "price": 7400.0 },
+          { "date": "2025-06-01", "price": 7430.0 },
+          { "date": "2025-07-01", "price": 7390.0 },
+          { "date": "2025-08-01", "price": 7420.0 },
+          { "date": "2025-09-01", "price": 7380.0 },
+          { "date": "2025-10-01", "price": 7410.0 },
+          { "date": "2025-11-01", "price": 7400.0 }
+        ],
+        "reviewsList": [
+          {
+            "author": "Alex Johnson",
+            "rating": 5,
+            "date": "2024-01-10",
+            "comment": "Perfect compact machine for our small café! The T3 temperature control is excellent and the Easy Cream feature makes milk steaming effortless. Great value!"
+          },
+          {
+            "author": "Sophie Martin",
+            "rating": 4,
+            "date": "2024-01-28",
+            "comment": "Love the compact size and energy efficiency. The NEO engine is quiet and the machine fits perfectly in our limited space. Easy to use and maintain."
+          },
+          {
+            "author": "Chris Taylor",
+            "rating": 5,
+            "date": "2024-02-14",
+            "comment": "Excellent entry-level machine with premium features. The T3 multi-temperature control works great and the automatic steaming is a huge time-saver. Highly recommend!"
+          },
+          {
+            "author": "Amanda White",
+            "rating": 4,
+            "date": "2024-02-28",
+            "comment": "Great machine for small operations. The compact footprint is perfect for our kiosk. The only downside is it can be a bit slow during very busy periods, but overall very satisfied."
+          },
+          {
+            "author": "Daniel Harris",
+            "rating": 5,
+            "date": "2024-03-10",
+            "comment": "Best compact machine we've tried! The Easy Cream feature is fantastic and the build quality is solid. Perfect for low-to-medium volume environments. Great investment!"
+          },
+          {
+            "author": "Ryan Cooper",
+            "rating": 2,
+            "date": "2024-01-18",
+            "comment": "The Easy Cream feature doesn't work as advertised. We've had constant issues with milk steaming consistency. The compact size is nice but it's too slow for even moderate volume. Very frustrating."
+          },
+          {
+            "author": "Jessica Liu",
+            "rating": 3,
+            "date": "2024-02-05",
+            "comment": "It's okay for the price, but nothing special. The T3 temperature control is finicky and requires constant adjustment. The NEO engine is quieter but the overall performance is underwhelming. Expected more."
+          },
+          {
+            "author": "Mark Thompson",
+            "rating": 1,
+            "date": "2024-03-15",
+            "comment": "Poor quality control. Received a machine with a defective temperature sensor. The warranty service took forever and the replacement part didn't fix the issue. Waste of money and time. Would not buy again."
+          }
+        ]
       }
     ]
   }

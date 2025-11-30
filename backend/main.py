@@ -5,7 +5,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
@@ -238,7 +238,11 @@ async def get_products():
         product_file = project_root / "data" / "product.json"
         with open(product_file, "r") as f:
             products = json.load(f)
-        return products
+        response = JSONResponse(content=products)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Product data not found")
     except json.JSONDecodeError:
@@ -1231,12 +1235,10 @@ Your response:"""
                         )
 
                         # Send confirmation email
-                        email_subject = (
-                            "Deal Confirmation - Victoria Arduino Espresso Machines"
-                        )
+                        email_subject = "Deal Confirmation - BrewBot Espresso Machines"
                         email_body = f"""Dear Partner,
 
-We are pleased to confirm that we have reached an agreement regarding the Victoria Arduino espresso machines.
+We are pleased to confirm that we have reached an agreement regarding the BrewBot espresso machines.
 
 Conversation Summary:
 {conversation_summary}
@@ -1258,8 +1260,8 @@ Lio (AI Negotiation Assistant)
                         )
                         end_time = start_time + timedelta(hours=1)
 
-                        meeting_summary = "Deal Finalization Meeting - Victoria Arduino"
-                        meeting_description = f"Follow-up meeting to finalize the details of our agreement regarding Victoria Arduino espresso machines.\n\nConversation ID: {agent_session_id}"
+                        meeting_summary = "Deal Finalization Meeting - BrewBot"
+                        meeting_description = f"Follow-up meeting to finalize the details of our agreement regarding BrewBot espresso machines.\n\nConversation ID: {agent_session_id}"
 
                         meeting_result = create_event(
                             summary=meeting_summary,
@@ -1428,6 +1430,10 @@ async def chat_with_brewbot(request: BrewBotChatRequest):
 
 class TTSRequest(BaseModel):
     text: str
+    voice_id: Optional[str] = "21m00Tcm4TlvDq8ikWAM"  # Default: Rachel voice
+    model_id: Optional[str] = "eleven_turbo_v2_5"  # Fast model for streaming
+    stability: Optional[float] = 0.5
+    similarity_boost: Optional[float] = 0.75
 
 
 class DownloadReportRequest(BaseModel):
@@ -1763,10 +1769,6 @@ Based on the metrics, this negotiation has resulted in significant cost savings 
         raise HTTPException(
             status_code=500, detail=f"Error generating report: {str(e)}"
         )
-    voice_id: Optional[str] = "21m00Tcm4TlvDq8ikWAM"  # Default: Rachel voice
-    model_id: Optional[str] = "eleven_turbo_v2_5"  # Fast model for streaming
-    stability: Optional[float] = 0.5
-    similarity_boost: Optional[float] = 0.75
 
 
 @app.post("/tts")

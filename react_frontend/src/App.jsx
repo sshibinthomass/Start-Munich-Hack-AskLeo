@@ -36,7 +36,7 @@ export default function App() {
   const [agentToAgentLoading, setAgentToAgentLoading] = useState(false);
   const [brewBotConversationId, setBrewBotConversationId] = useState(null);
   const [maxExchanges, setMaxExchanges] = useState(11);
-  const [conversationMode, setConversationMode] = useState("fixed"); // "fixed" or "until_deal"
+  const [conversationMode, setConversationMode] = useState("until_deal"); // "fixed" or "until_deal"
   const [initialMessage, setInitialMessage] = useState("hello");
 
   // Download report function
