@@ -33,7 +33,6 @@
 │         React Frontend (Port 5173)                  │
 │  ┌──────────────────────────────────────────────┐  │
 │  │  • Chat Interface                            │  │
-│  │  • Voice Recording (Microphone)              │  │
 │  │  • Agent-to-Agent Controls                   │  │
 │  │  • Product Landing Page                      │  │
 │  └──────────────────────────────────────────────┘  │
@@ -55,14 +54,14 @@
 │  │   LangGraph Agent (MCPChatbotNode)          │   │
 │  │   • Message processing                       │   │
 │  │   • Tool execution                           │   │
-│  │   • ScoutBot negotiation logic               │   │
+│  │   • BotBuild negotiation logic               │   │
 │  └──────────────────────────────────────────────┘   │
 │                      │                              │
 │  ┌──────────┬────────┴──────┬──────────────────┐   │
 │  │  Tools   │  LLM Provider │  External APIs   │   │
 │  │          │               │                  │   │
 │  │ • Gmail  │  • OpenAI     │  • Dunkler API   │   │
-│  │ • Calendar│   - GPT-4o   │  • ElevenLabs    │   │
+│  │ • Calendar│   - GPT-4.1   │  • ElevenLabs    │   │
 │  │ • Product │   - Whisper  │    (TTS)         │   │
 │  │   Catalog │              │                  │   │
 │  └──────────┴───────────────┴──────────────────┘   │
@@ -74,7 +73,7 @@
 ## ✨ Key Features
 
 ### 🤖 AI Agent
-- Strategic buyer negotiation bot ("ScoutBot")
+- Strategic buyer negotiation bot ("BotBuild")
 - Keeps responses concise and professional
 - Automatically detects when a deal is reached
 - Sends emails and schedules meetings after successful deals
@@ -87,11 +86,6 @@
 - **Speech-to-Text**: Speak your messages using OpenAI Whisper
 - **Text-to-Speech**: Hear AI responses with ElevenLabs voices
 
-### 🏢 Product Catalog
-- Victoria Arduino espresso machines:
-  - Maverick Gravimetric (Flagship) - $32,900
-  - Eagle Tempo Digit (Mid-Range) - $19,900
-  - E1 Prima Volumetric (Entry-Level) - $7,490
 
 ---
 
@@ -223,7 +217,7 @@ Open your browser: **http://localhost:5173**
 
 ### Basic Chat
 
-1. Select "OpenAI" provider and a model (e.g., "GPT-4o Mini")
+1. Select "OpenAI" provider and a model (e.g., "GPT-4.1")
 2. Type your message
 3. Press Enter or click Send
 4. Watch the AI respond in real-time
@@ -308,57 +302,6 @@ uv sync
 - Use **absolute paths** in `.env` for MCP_*_DIR variables
 - Example (Windows): `C:\Users\...\backend\langgraph_agent\mcps\local_servers\products.py`
 - Example (Mac/Linux): `/Users/.../backend/langgraph_agent/mcps/local_servers/products.py`
-
----
-
-## 📊 Product Catalog
-
-### Victoria Arduino Espresso Machines
-
-**1. Maverick Gravimetric 3gr**
-- Price: $32,900 (negotiable to $29,610)
-- 3 groups, gravimetric extraction
-- 5 units in stock, 5-day delivery
-
-**2. Eagle Tempo Digit 3gr**
-- Price: $19,900 (negotiable to $17,900)
-- 3 groups, digital dosing
-- 12 units in stock, 3-day delivery
-
-**3. E1 Prima Volumetric T3**
-- Price: $7,490 (negotiable to $6,990)
-- 1 group, compact design
-- 18 units in stock, 2-day delivery
-
----
-
-## 📝 Example Usage
-
-### Negotiation Example
-```
-You: "I need 20 Maverick machines. Can you offer a discount?"
-BotBuild: "For 20 units at $32,900 each, I can offer 8% off. 
-          That's $30,268 per unit. Deal?"
-You: "Deal! Send me a confirmation email."
-[Tool executes: send_email]
-BotBuild: "Confirmation sent! Meeting scheduled for 2 days from now."
-```
-
-### Email Example
-```
-You: "Check my emails"
-[Tool executes: list_emails]
-BotBuild: "You have 3 new emails: 
-          1. Order confirmation from supplier
-          2. Invoice from vendor..."
-```
-
----
-
-## 📞 Support
-
-- **GitHub**: [Start-Munich-Hack-AskLeo](https://github.com/sshibinthomass/Start-Munich-Hack-AskLeo)
-- **Issues**: Open an issue on GitHub
 
 ---
 
