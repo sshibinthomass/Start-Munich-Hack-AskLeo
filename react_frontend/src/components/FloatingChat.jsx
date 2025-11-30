@@ -26,6 +26,10 @@ export function FloatingChat({
   onConversationModeChange,
   initialMessage,
   onInitialMessageChange,
+  personalityTraits,
+  onPersonalityTraitsChange,
+  negotiationStrategy,
+  onNegotiationStrategyChange,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -179,14 +183,14 @@ export function FloatingChat({
                     <span>25</span>
                   </div>
                   <p className="floating-chat__settings-note">
-                    Only odd numbers are allowed (ensures Dunkler has the last message)
+                    Only odd numbers are allowed (ensures BrewBot has the last message)
                   </p>
                 </>
               )}
 
               {conversationMode === "until_deal" && (
                 <p className="floating-chat__settings-note">
-                  The conversation will continue until Leo and Dunkler reach an agreement or deal.
+                  The conversation will continue until Lio and BrewBot reach an agreement or deal.
                 </p>
               )}
 
@@ -203,7 +207,39 @@ export function FloatingChat({
                 placeholder="Enter initial message..."
               />
               <p className="floating-chat__settings-note">
-                This message will be sent by Leo to start the conversation with Dunkler.
+                This message will be sent by Lio to start the conversation with BrewBot.
+              </p>
+
+              <div className="floating-chat__settings-divider"></div>
+
+              <label className="floating-chat__settings-label">
+                Personality Traits
+              </label>
+              <textarea
+                value={personalityTraits}
+                onChange={(e) => onPersonalityTraitsChange(e.target.value)}
+                className="floating-chat__settings-textarea"
+                placeholder="Enter personality traits (one per line or comma-separated)..."
+                rows={3}
+              />
+              <p className="floating-chat__settings-note">
+                Define Lio's personality traits. Each line or comma-separated value will be used in the prompt.
+              </p>
+
+              <div className="floating-chat__settings-divider"></div>
+
+              <label className="floating-chat__settings-label">
+                Negotiation Strategy
+              </label>
+              <textarea
+                value={negotiationStrategy}
+                onChange={(e) => onNegotiationStrategyChange(e.target.value)}
+                className="floating-chat__settings-textarea"
+                placeholder="Enter negotiation strategies (one per line or comma-separated)..."
+                rows={3}
+              />
+              <p className="floating-chat__settings-note">
+                Define Lio's negotiation strategies. Each line or comma-separated value will be used in the prompt.
               </p>
             </div>
           </div>

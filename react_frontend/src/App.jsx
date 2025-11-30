@@ -34,10 +34,12 @@ export default function App() {
   const isPlayingRef = useRef(false);
   const [agentToAgentEnabled, setAgentToAgentEnabled] = useState(false);
   const [agentToAgentLoading, setAgentToAgentLoading] = useState(false);
-  const [dunklerConversationId, setDunklerConversationId] = useState(null);
+  const [brewBotConversationId, setBrewBotConversationId] = useState(null);
   const [maxExchanges, setMaxExchanges] = useState(11);
   const [conversationMode, setConversationMode] = useState("fixed"); // "fixed" or "until_deal"
   const [initialMessage, setInitialMessage] = useState("hello");
+  const [personalityTraits, setPersonalityTraits] = useState("Calm, composed, persuasive, and highly strategic");
+  const [negotiationStrategy, setNegotiationStrategy] = useState("Start with a smaller order and request a justified discount");
 
   const normalizeToolEntry = (entry) => {
     if (!entry) return null;
@@ -195,7 +197,7 @@ export default function App() {
     setLatestToolCall(null);
     setToolCallHistory([]);
     setToolStatusComplete(true);
-    setDunklerConversationId(null); // Clear Dunkler conversation ID
+    setBrewBotConversationId(null); // Clear BrewBot conversation ID
     try {
       const res = await fetch(`${BACKEND_URL}/chat/reset`, {
         method: "POST",
@@ -485,10 +487,22 @@ export default function App() {
     setLatestToolCall(null);
     setToolCallHistory([]);
     setToolStatusComplete(true);
-    setDunklerConversationId(null); // Reset conversation ID
+      setBrewBotConversationId(null); // Reset conversation ID
     stopAudio();
 
     try {
+      // Parse personality traits and negotiation strategy (support both comma-separated and newline-separated)
+      const parseList = (str) => {
+        if (!str || !str.trim()) return [];
+        return str
+          .split(/[,\n]/)
+          .map(item => item.trim())
+          .filter(item => item.length > 0);
+      };
+
+      const personalityTraitsList = parseList(personalityTraits);
+      const negotiationStrategyList = parseList(negotiationStrategy);
+
       const response = await fetch(`${BACKEND_URL}/chat/agent-to-agent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -499,6 +513,8 @@ export default function App() {
           conversation_mode: conversationMode,
           initial_message: messageToUse,
           voice_output_enabled: voiceOutputEnabled,
+          personality_traits: personalityTraitsList,
+          negotiation_strategy: negotiationStrategyList,
         }),
       });
 
@@ -526,7 +542,7 @@ export default function App() {
               const data = JSON.parse(line.slice(6));
 
               if (data.type === "status") {
-                // Status message (e.g., "Dunkler agent initialized")
+                // Status message (e.g., "BrewBot agent initialized")
                 setConversation((prev) => [
                   ...prev,
                   {
@@ -538,7 +554,7 @@ export default function App() {
                 ]);
               } else if (data.type === "agent_message") {
                 // Message from an agent
-                const agentName = data.agent === "mcp_chatbot" ? "Leo" : "Dunkler";
+                const agentName = data.agent === "mcp_chatbot" ? "Lio" : "BrewBot";
                 const messageText = `[${agentName}]: ${data.message}`;
                 const rendered = renderMarkdown(data.message);
                 
@@ -562,8 +578,8 @@ export default function App() {
                 setAgentToAgentLoading(false);
               } else if (data.type === "done") {
                 const completionMessage = data.deal_reached
-                  ? `Deal reached after ${data.exchanges || 0} exchanges! You can now continue chatting with Dunkler.`
-                  : `Conversation completed after ${data.exchanges || 0} exchanges. You can now continue chatting with Dunkler.`;
+                  ? `Deal reached after ${data.exchanges || 0} exchanges! You can now continue chatting with BrewBot.`
+                  : `Conversation completed after ${data.exchanges || 0} exchanges. You can now continue chatting with BrewBot.`;
                 
                 setConversation((prev) => [
                   ...prev,
@@ -575,9 +591,9 @@ export default function App() {
                   },
                 ]);
                 setAgentToAgentLoading(false);
-                // Store conversation ID for continued chat with Dunkler
+                // Store conversation ID for continued chat with BrewBot
                 if (data.conversation_id) {
-                  setDunklerConversationId(data.conversation_id);
+                  setBrewBotConversationId(data.conversation_id);
                 }
               }
             } catch (parseError) {
@@ -600,10 +616,10 @@ export default function App() {
     const trimmed = content.trim();
     if (!trimmed) return;
 
-    // Check if we should send to Dunkler (after agent-to-agent conversation)
-    // Priority: If Dunkler conversation exists, always send to Dunkler (not Leo)
-    if (dunklerConversationId) {
-      // Send message to Dunkler
+    // Check if we should send to BrewBot (after agent-to-agent conversation)
+    // Priority: If BrewBot conversation exists, always send to BrewBot (not Lio)
+    if (brewBotConversationId) {
+      // Send message to BrewBot
       const userMessage = {
         text: trimmed,
         rendered: escapeHtml(trimmed),
@@ -619,31 +635,31 @@ export default function App() {
       ]);
 
       try {
-        const response = await fetch(`${BACKEND_URL}/chat/dunkler`, {
+        const response = await fetch(`${BACKEND_URL}/chat/brewbot`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: trimmed,
-            conversation_id: dunklerConversationId,
+            conversation_id: brewBotConversationId,
           }),
         });
 
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(errorText || "Dunkler backend returned an error.");
+          throw new Error(errorText || "BrewBot backend returned an error.");
         }
 
         const data = await response.json();
-        const dunklerResponse = data.response || "No response";
-        const rendered = renderMarkdown(dunklerResponse);
+        const brewBotResponse = data.response || "No response";
+        const rendered = renderMarkdown(brewBotResponse);
 
         setConversation((prev) => {
           const updated = [...prev];
           const lastIndex = updated.length - 1;
           if (lastIndex >= 0 && !updated[lastIndex].isUser) {
             updated[lastIndex] = {
-              text: dunklerResponse,
-              rendered: `<strong>Dunkler:</strong> ${rendered}`,
+              text: brewBotResponse,
+              rendered: `<strong>BrewBot:</strong> ${rendered}`,
               isUser: false,
               agent: "external_api",
             };
@@ -653,7 +669,7 @@ export default function App() {
 
         // Queue audio if voice output is enabled
         if (voiceOutputEnabled) {
-          await queueAudioForAgent(dunklerResponse, "external_api");
+          await queueAudioForAgent(brewBotResponse, "external_api");
         }
 
         setLoading(false);
@@ -667,7 +683,7 @@ export default function App() {
       }
     }
 
-    // Normal chat with Leo
+    // Normal chat with Lio
     const userMessage = {
       text: trimmed,
       rendered: escapeHtml(trimmed),
@@ -817,6 +833,10 @@ export default function App() {
         onConversationModeChange={setConversationMode}
         initialMessage={initialMessage}
         onInitialMessageChange={setInitialMessage}
+        personalityTraits={personalityTraits}
+        onPersonalityTraitsChange={setPersonalityTraits}
+        negotiationStrategy={negotiationStrategy}
+        onNegotiationStrategyChange={setNegotiationStrategy}
       />
     </div>
   );

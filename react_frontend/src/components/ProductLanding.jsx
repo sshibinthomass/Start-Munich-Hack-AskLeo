@@ -146,14 +146,14 @@ export function ProductLanding() {
     <div className="product-landing">
       <header className="product-landing__header">
         <div className="product-landing__header-content">
-          <h1 className="product-landing__title">Victoria Arduino</h1>
-          <p className="product-landing__subtitle">Premium Espresso Machines</p>
+          <h1 className="product-landing__title">BrewBot</h1>
+          <p className="product-landing__subtitle">AI-Powered Procurement Solutions</p>
         </div>
       </header>
 
       <main className="product-landing__main">
         <div className="product-landing__container">
-          <h2 className="product-landing__section-title">Our Products</h2>
+          <h2 className="product-landing__section-title">Featured Products</h2>
           <div className="product-grid">
             {products.map((product) => {
               const version = product.versions?.[0];
@@ -163,9 +163,6 @@ export function ProductLanding() {
                 <div key={product.id} className="product-card">
                   <div className="product-card__header">
                     <span className="product-card__category">{product.category}</span>
-                    <span className={`product-card__stock ${version.inStock ? "product-card__stock--in-stock" : ""}`}>
-                      {version.inStock ? "In Stock" : "Out of Stock"}
-                    </span>
                   </div>
                   
                   {version.images && version.images.length > 0 && (
@@ -193,31 +190,7 @@ export function ProductLanding() {
 
                   <p className="product-card__description">{version.description}</p>
 
-                  <div className="product-card__features">
-                    <h4 className="product-card__features-title">Key Features:</h4>
-                    <ul className="product-card__features-list">
-                      {version.features?.slice(0, 3).map((feature, idx) => (
-                        <li key={idx}>{feature}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="product-card__pricing">
-                    <div className="product-card__price-main">
-                      {formatPrice(version.price)}
-                    </div>
-                    {version.minPrice !== version.maxPrice && (
-                      <div className="product-card__price-range">
-                        Range: {formatPrice(version.minPrice)} - {formatPrice(version.maxPrice)}
-                      </div>
-                    )}
-                  </div>
-
                   <div className="product-card__footer">
-                    <div className="product-card__info">
-                      <span>Delivery: {version.deliveryTimeDays} days</span>
-                      <span>Warranty: {version.warranty}</span>
-                    </div>
                     <button className="product-card__button">Learn More</button>
                   </div>
                 </div>

@@ -9,21 +9,22 @@
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: #0066cc;
   border: none;
   color: white;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 4px 16px rgba(0, 102, 204, 0.3);
+  transition: all 0.2s ease;
   position: relative;
 }
 
 .floating-chat__button:hover {
+  background: #0052a3;
   transform: scale(1.05);
-  box-shadow: 0 12px 32px rgba(59, 130, 246, 0.5);
+  box-shadow: 0 6px 20px rgba(0, 102, 204, 0.4);
 }
 
 .floating-chat__button:active {
@@ -49,7 +50,7 @@
 }
 
 .floating-chat__header {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: #0066cc;
   color: white;
   padding: 1rem 1.25rem;
   display: flex;
@@ -195,7 +196,7 @@
 
 .floating-chat__settings-modal {
   background: white;
-  border-radius: 16px;
+  border-radius: 12px;
   box-shadow: 0 20px 60px rgba(15, 23, 42, 0.3);
   width: 90%;
   max-width: 480px;
@@ -221,8 +222,8 @@
   justify-content: space-between;
   align-items: center;
   padding: 1.25rem 1.5rem;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  border-radius: 16px 16px 0 0;
+  background: #0066cc;
+  border-radius: 12px 12px 0 0;
   color: white;
 }
 
@@ -266,7 +267,7 @@
 }
 
 .floating-chat__settings-label strong {
-  color: #3b82f6;
+  color: #0066cc;
   font-size: 1rem;
 }
 
@@ -286,29 +287,29 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: #0066cc;
   cursor: pointer;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 2px 4px rgba(0, 102, 204, 0.3);
   transition: background 0.2s ease;
 }
 
 .floating-chat__settings-slider::-webkit-slider-thumb:hover {
-  background: #2563eb;
+  background: #0052a3;
 }
 
 .floating-chat__settings-slider::-moz-range-thumb {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: #0066cc;
   cursor: pointer;
   border: none;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 2px 4px rgba(0, 102, 204, 0.3);
   transition: background 0.2s ease;
 }
 
 .floating-chat__settings-slider::-moz-range-thumb:hover {
-  background: #2563eb;
+  background: #0052a3;
 }
 
 .floating-chat__settings-range {
@@ -355,7 +356,7 @@
   width: 18px;
   height: 18px;
   cursor: pointer;
-  accent-color: #3b82f6;
+  accent-color: #0066cc;
 }
 
 .floating-chat__settings-divider {
@@ -379,11 +380,35 @@
 
 .floating-chat__settings-input:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: #0066cc;
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
 }
 
 .floating-chat__settings-input::placeholder {
+  color: #94a3b8;
+}
+
+.floating-chat__settings-textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 80px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  background: #ffffff;
+  color: #1f2937;
+}
+
+.floating-chat__settings-textarea:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+}
+
+.floating-chat__settings-textarea::placeholder {
   color: #94a3b8;
 }
 
@@ -563,12 +588,12 @@
 
 .floating-chat__tool-history-item-button:hover {
   background: rgba(248, 250, 252, 0.8);
-  border-color: rgba(59, 130, 246, 0.4);
+  border-color: rgba(0, 102, 204, 0.4);
 }
 
 .floating-chat__tool-history-item-button--expanded {
-  background: rgba(59, 130, 246, 0.05);
-  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(0, 102, 204, 0.05);
+  border-color: rgba(0, 102, 204, 0.4);
 }
 
 .floating-chat__tool-history-index {
@@ -636,9 +661,9 @@
 }
 
 .floating-chat__tool-history-copy {
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  color: #2563eb;
+  background: rgba(0, 102, 204, 0.1);
+  border: 1px solid rgba(0, 102, 204, 0.3);
+  color: #0052a3;
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   cursor: pointer;
@@ -648,8 +673,8 @@
 }
 
 .floating-chat__tool-history-copy:hover {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(0, 102, 204, 0.2);
+  border-color: rgba(0, 102, 204, 0.5);
 }
 
 .floating-chat__tool-history-code {

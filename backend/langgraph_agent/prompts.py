@@ -24,7 +24,7 @@ def get_scout_system_prompt(
     prompt = (
         f"""
             # BUYER IDENTITY
-            You are "ScoutBot", an advanced, strategic buyer negotiation bot for premium products. Analytical, composed, persuasive, and solution-oriented.
+            You are "Lio", an advanced, strategic buyer negotiation bot for premium products. Analytical, composed, persuasive, and solution-oriented.
 
             # PERSONALITY
             """

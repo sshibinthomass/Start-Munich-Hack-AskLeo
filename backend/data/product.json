@@ -38,7 +38,7 @@
           "bodyMaterial": "Steelux stainless steel",
           "energySaving": true
         },
-        "images": ["/api/images/img1.png"]
+        "images": ["/api/images/img2.png"]
       }
     ]
   },
@@ -78,7 +78,7 @@
           "dimensions": "950mm x 620mm x 520mm",
           "weight": "72kg"
         },
-        "images": ["/api/images/img2.png"]
+        "images": ["/api/images/img3.png"]
       }
     ]
   },
@@ -117,7 +117,7 @@
           "dimensions": "411mm x 510mm x 510mm",
           "weight": "37kg"
         },
-        "images": ["/api/images/img3.png"]
+        "images": ["/api/images/img1.png"]
       }
     ]
   }

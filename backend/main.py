@@ -181,9 +181,11 @@ class AgentToAgentRequest(BaseModel):
     conversation_mode: Optional[str] = "fixed"  # "fixed" or "until_deal"
     initial_message: Optional[str] = "hello"
     voice_output_enabled: Optional[bool] = False
+    personality_traits: Optional[List[str]] = None
+    negotiation_strategy: Optional[List[str]] = None
 
 
-class DunklerChatRequest(BaseModel):
+class BrewBotChatRequest(BaseModel):
     message: str
     conversation_id: str
 
@@ -593,6 +595,8 @@ async def get_mcp_chatbot_response(
     provider: str,
     selected_llm: str,
     use_case: str = "mcp_chatbot",
+    personality_traits: Optional[List[str]] = None,
+    negotiation_strategy: Optional[List[str]] = None,
 ) -> str:
     """
     Helper function to get a response from the MCP chatbot.
@@ -647,7 +651,10 @@ async def get_mcp_chatbot_response(
     reset_tool_status(session_key)
 
     # Build messages
-    system_prompt = get_scout_system_prompt()
+    system_prompt = get_scout_system_prompt(
+        personality_traits=personality_traits,
+        negotiation_strategy=negotiation_strategy,
+    )
     messages = [SystemMessage(content=system_prompt)]
     messages.extend(session_store[session_key])
     user_msg = HumanMessage(content=message)
@@ -757,7 +764,7 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
     Orchestrates a conversation between the MCP chatbot and external API agent.
     MCP chatbot initiates with "hi" and they exchange messages.
     Can run for a fixed number of exchanges or until a deal is reached.
-    Dunkler (external API) always has the last message.
+    BrewBot (external API) always has the last message.
     """
     try:
         provider = (request.provider or "groq").lower()
@@ -766,6 +773,8 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
         max_exchanges = (
             request.max_exchanges or 11 if conversation_mode == "fixed" else None
         )
+        personality_traits = request.personality_traits
+        negotiation_strategy = request.negotiation_strategy
 
         # Use separate session ID for agent-to-agent
         agent_session_id = f"agent-to-agent-{os.urandom(8).hex()}"
@@ -775,17 +784,17 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
                 # Initialize external API agent
                 external_agent = ExternalAPIAgent()
                 await external_agent.initialize_conversation()
-                yield f"data: {json.dumps({'type': 'status', 'message': 'Dunkler agent initialized'})}\n\n"
+                yield f"data: {json.dumps({'type': 'status', 'message': 'BrewBot agent initialized'})}\n\n"
 
                 # Start with MCP chatbot sending the initial message
                 initial_message = request.initial_message or "hello"
                 yield f"data: {json.dumps({'type': 'agent_message', 'agent': 'mcp_chatbot', 'message': initial_message})}\n\n"
 
-                # Helper function to check if a deal has been reached using Leo's judgment
+                # Helper function to check if a deal has been reached using Lio's judgment
                 async def check_deal_reached(
                     messages: List[str], exchange_count: int = 0
                 ) -> bool:
-                    """Ask Leo to evaluate if a deal has been reached based on conversation."""
+                    """Ask Lio to evaluate if a deal has been reached based on conversation."""
                     # Force deal at 15 exchanges (max limit)
                     if exchange_count >= 15:
                         return True
@@ -812,7 +821,7 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
                             ]
                         )
 
-                        # Ask Leo to evaluate if a deal has been reached
+                        # Ask Lio to evaluate if a deal has been reached
                         evaluation_prompt = f"""You are evaluating a negotiation conversation. Based on the following exchange, determine if both parties have reached a mutual agreement or deal.
 
 Important: A deal means BOTH parties have explicitly agreed to specific terms, prices, quantities, or conditions. Casual conversation, questions, or one-sided statements do NOT constitute a deal.
@@ -822,8 +831,8 @@ Conversation:
 
 Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clear deal/agreement has been reached, or "NO" if not yet."""
 
-                        # Get Leo's evaluation using a separate session to avoid interfering with main conversation
-                        leo_evaluation = await get_mcp_chatbot_response(
+                        # Get Lio's evaluation using a separate session to avoid interfering with main conversation
+                        lio_evaluation = await get_mcp_chatbot_response(
                             evaluation_prompt,
                             f"{agent_session_id}_deal_check",
                             provider,
@@ -831,12 +840,12 @@ Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clea
                             "mcp_chatbot",
                         )
 
-                        # Check if Leo's response indicates a deal
-                        leo_response_lower = leo_evaluation.lower().strip()
+                        # Check if Lio's response indicates a deal
+                        lio_response_lower = lio_evaluation.lower().strip()
 
                         # Look for clear positive indicators
                         if any(
-                            word in leo_response_lower
+                            word in lio_response_lower
                             for word in [
                                 "yes",
                                 "deal",
@@ -848,7 +857,7 @@ Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clea
                         ):
                             # Make sure it's not a negative statement
                             if not any(
-                                word in leo_response_lower
+                                word in lio_response_lower
                                 for word in [
                                     "no deal",
                                     "not agreed",
@@ -858,15 +867,15 @@ Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clea
                             ):
                                 return True
 
-                        # If we're at 14+ exchanges, be more lenient - if Leo doesn't explicitly say no, consider it a deal
+                        # If we're at 14+ exchanges, be more lenient - if Lio doesn't explicitly say no, consider it a deal
                         if exchange_count >= 14:
-                            if "no" not in leo_response_lower or (
-                                "no" in leo_response_lower
-                                and "not" not in leo_response_lower
+                            if "no" not in lio_response_lower or (
+                                "no" in lio_response_lower
+                                and "not" not in lio_response_lower
                             ):
                                 # If response is ambiguous but we're at the limit, lean towards deal
                                 if (
-                                    len(leo_response_lower) < 50
+                                    len(lio_response_lower) < 50
                                 ):  # Short response might be "yes" or similar
                                     return True
 
@@ -879,8 +888,8 @@ Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clea
                         return False
 
                 # Main conversation loop
-                # We want Dunkler (external_api) to always have the last message
-                # So we do pairs of exchanges: Dunkler -> Leo, and ensure we end with Dunkler
+                # We want BrewBot (external_api) to always have the last message
+                # So we do pairs of exchanges: BrewBot -> Lio, and ensure we end with BrewBot
                 current_message = initial_message
                 exchange_count = 0
                 conversation_messages = [initial_message]
@@ -903,7 +912,7 @@ Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clea
                             deal_reached = True
                             yield f"data: {json.dumps({'type': 'status', 'message': f'Maximum conversations ({max_iterations}) reached. Deal finalized.'})}\n\n"
                             break
-                    # External API agent (Dunkler) responds to current message
+                    # External API agent (BrewBot) responds to current message
                     try:
                         external_response = await external_agent.send_message(
                             current_message
@@ -917,7 +926,7 @@ Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clea
                                 conversation_messages, exchange_count
                             )
                             if deal_reached:
-                                yield f"data: {json.dumps({'type': 'status', 'message': 'Leo has determined that a deal has been reached!'})}\n\n"
+                                yield f"data: {json.dumps({'type': 'status', 'message': 'Lio has determined that a deal has been reached!'})}\n\n"
                                 break
                     except Exception as e:
                         yield f"data: {json.dumps({'type': 'error', 'agent': 'external_api', 'error': str(e)})}\n\n"
@@ -925,11 +934,11 @@ Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clea
 
                     exchange_count += 1
 
-                    # Check if we've reached the max exchanges (fixed mode) - if so, Dunkler has the last message
+                    # Check if we've reached the max exchanges (fixed mode) - if so, BrewBot has the last message
                     if conversation_mode == "fixed" and exchange_count >= max_exchanges:
                         break
 
-                    # MCP chatbot (Leo) responds to external API's message
+                    # MCP chatbot (Lio) responds to external API's message
                     try:
                         # Add urgency context if we're approaching the limit
                         message_with_context = external_response
@@ -946,6 +955,8 @@ Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clea
                             provider,
                             selected_llm,
                             "mcp_chatbot",
+                            personality_traits=personality_traits,
+                            negotiation_strategy=negotiation_strategy,
                         )
                         yield f"data: {json.dumps({'type': 'agent_message', 'agent': 'mcp_chatbot', 'message': mcp_response})}\n\n"
                         current_message = mcp_response
@@ -957,8 +968,8 @@ Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clea
                                 conversation_messages, exchange_count
                             )
                             if deal_reached:
-                                yield f"data: {json.dumps({'type': 'status', 'message': 'Leo has determined that a deal has been reached!'})}\n\n"
-                                # Let Dunkler have the last word after deal is detected
+                                yield f"data: {json.dumps({'type': 'status', 'message': 'Lio has determined that a deal has been reached!'})}\n\n"
+                                # Let BrewBot have the last word after deal is detected
                                 break
                     except Exception as e:
                         yield f"data: {json.dumps({'type': 'error', 'agent': 'mcp_chatbot', 'error': str(e)})}\n\n"
@@ -1023,7 +1034,7 @@ Conversation Summary:
 We look forward to finalizing the details in our upcoming meeting.
 
 Best regards,
-Leo (AI Negotiation Assistant)
+Lio (AI Negotiation Assistant)
 """
                         email_result = send_email(
                             to=vendor_email, subject=email_subject, message=email_body
@@ -1081,10 +1092,10 @@ Leo (AI Negotiation Assistant)
         )
 
 
-@app.post("/chat/dunkler")
-async def chat_with_dunkler(request: DunklerChatRequest):
+@app.post("/chat/brewbot")
+async def chat_with_brewbot(request: BrewBotChatRequest):
     """
-    Send a message to Dunkler (external API agent) after agent-to-agent conversation.
+    Send a message to BrewBot (external API agent) after agent-to-agent conversation.
     Uses the stored conversation ID to continue the conversation with history.
     """
     try:
@@ -1114,7 +1125,7 @@ async def chat_with_dunkler(request: DunklerChatRequest):
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error sending message to Dunkler: {str(e)}"
+            status_code=500, detail=f"Error sending message to BrewBot: {str(e)}"
         )
 
 
