@@ -185,7 +185,7 @@ export function ProductLanding() {
                 e.target.style.display = 'none';
               }}
             />
-            <h1 className="product-landing__title">BrewBot</h1>
+          <h1 className="product-landing__title">BrewBot</h1>
           </div>
           <p className="product-landing__subtitle">AI-Powered Procurement Solutions</p>
         </div>
@@ -222,7 +222,7 @@ export function ProductLanding() {
                     {product.name}
                   </h3>
                   <div className="product-card__brand-price">
-                    <p className="product-card__brand">{product.brand}</p>
+                  <p className="product-card__brand">{product.brand}</p>
                     <span 
                       className="product-card__price product-card__price--clickable"
                       onClick={async () => {

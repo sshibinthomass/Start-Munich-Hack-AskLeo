@@ -39,6 +39,8 @@ export function FloatingChat({
   onMinDiscountChange,
   maxDiscount,
   onMaxDiscountChange,
+  negotiateWithBrewBot,
+  onNegotiateWithBrewBotToggle,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -166,6 +168,26 @@ export function FloatingChat({
                   />
                   <span>Until Deal is Reached</span>
                 </label>
+              </div>
+              
+              <div className="floating-chat__settings-divider"></div>
+              
+              <div className="floating-chat__settings-mode">
+                <label className="floating-chat__settings-label">
+                  <strong>Negotiate with BrewBot</strong>
+                  <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={negotiateWithBrewBot}
+                      onChange={(e) => onNegotiateWithBrewBotToggle(e.target.checked)}
+                      className="floating-chat__settings-checkbox"
+                    />
+                    <span>Enable direct negotiation with BrewBot (instead of Lio)</span>
+                  </div>
+                </label>
+                <p className="floating-chat__settings-note">
+                  When enabled, you'll negotiate directly with BrewBot. Supports both text and voice.
+                </p>
               </div>
 
               {conversationMode === "fixed" && (

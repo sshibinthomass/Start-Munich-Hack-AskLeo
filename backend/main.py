@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import asyncio
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, UploadFile, File
@@ -31,7 +32,7 @@ from langchain_core.messages import (
     AIMessage,
 )  # noqa: E402
 from langgraph_agent.mcps.tool_loader import load_tools_with_timeout  # noqa: E402
-from langgraph_agent.prompts import get_scout_system_prompt  # noqa: E402
+from langgraph_agent.prompts import get_scout_system_prompt, get_product_qa_prompt  # noqa: E402
 from langgraph_agent.generic import (  # noqa: E402
     reset_tool_status,
     finalize_tool_status,
@@ -374,7 +375,18 @@ async def chat_simple(request: SimpleChatRequest):
         reset_tool_status(session_key)
 
         # Build messages from stored history and current input
-        system_prompt = get_scout_system_prompt()
+        # Load product data for product Q&A prompt
+        products_data = []
+        try:
+            product_file = project_root / "data" / "product.json"
+            if product_file.exists():
+                with open(product_file, "r") as f:
+                    products_data = json.load(f)
+        except Exception as e:
+            print(f"Warning: Could not load product data: {e}")
+
+        # Use product Q&A prompt instead of negotiation prompt for general chat
+        system_prompt = get_product_qa_prompt(products_data=products_data)
         messages = [SystemMessage(content=system_prompt)]
         messages.extend(session_store[session_key])
         user_msg = HumanMessage(content=request.message)
@@ -389,8 +401,10 @@ async def chat_simple(request: SimpleChatRequest):
                 from langgraph_agent.nodes.mcp_chatbot_node import MCPChatbotNode
                 from langchain_core.messages import ToolMessage
 
-                # Create the node to access tools and LLM
-                mcp_node = MCPChatbotNode(llm, tools=tools)
+                # Create the node to access tools and LLM with product Q&A prompt
+                mcp_node = MCPChatbotNode(
+                    llm, tools=tools, custom_system_prompt=system_prompt
+                )
                 working_messages = list(messages)
                 iteration = 0
                 max_iterations = 10
@@ -1221,32 +1235,119 @@ Your response:"""
                                 "VENDOR_EMAIL", "vendor@victoriaarduino.com"
                             )
 
-                        # Create conversation summary (last 6 messages)
+                        # Extract key deal information from conversation
+                        negotiated_discount = None
+                        negotiated_price = None
+                        for msg in conversation_messages:
+                            # Look for discount percentages
+                            discount_match = re.search(r"(\d+(?:\.\d+)?)\s*%", str(msg))
+                            if discount_match:
+                                try:
+                                    disc_value = float(discount_match.group(1))
+                                    if (
+                                        not negotiated_discount
+                                        or disc_value < negotiated_discount
+                                    ):
+                                        negotiated_discount = disc_value
+                                except (ValueError, AttributeError):
+                                    pass
+
+                            # Look for price mentions
+                            price_match = re.search(
+                                r"\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", str(msg)
+                            )
+                            if price_match:
+                                try:
+                                    price_str = price_match.group(1).replace(",", "")
+                                    price_value = float(price_str)
+                                    if (
+                                        not negotiated_price
+                                        or price_value < negotiated_price
+                                    ):
+                                        negotiated_price = price_value
+                                except (ValueError, AttributeError):
+                                    pass
+
+                        # Get original price from product data
+                        original_price = None
+                        try:
+                            with open(project_root / "data" / "product.json", "r") as f:
+                                products = json.load(f)
+                                for product in products:
+                                    if product.get("name") == product_name:
+                                        for version in product.get("versions", []):
+                                            original_price = version.get("price")
+                                            break
+                                        break
+                        except Exception:
+                            pass
+
+                        # Calculate final price if we have discount and original price
+                        final_price = None
+                        if negotiated_discount and original_price:
+                            final_price = original_price * (
+                                1 - negotiated_discount / 100
+                            )
+                        elif negotiated_price:
+                            final_price = negotiated_price
+
+                        # Create conversation summary (last 6 messages) - formatted better
                         summary_messages = (
                             conversation_messages[-6:]
                             if len(conversation_messages) > 6
                             else conversation_messages
                         )
-                        conversation_summary = "\n".join(
+                        conversation_summary = "\n\n".join(
                             [
-                                f"- {msg[:200]}..." if len(msg) > 200 else f"- {msg}"
+                                f"• {msg[:300]}..." if len(msg) > 300 else f"• {msg}"
                                 for msg in summary_messages
                             ]
                         )
 
+                        # Build deal terms section
+                        deal_terms = []
+                        if product_name:
+                            deal_terms.append(f"Product: {product_name}")
+                        if number_of_units:
+                            deal_terms.append(f"Quantity: {number_of_units} units")
+                        if negotiated_discount:
+                            deal_terms.append(f"Discount: {negotiated_discount}%")
+                        if final_price:
+                            deal_terms.append(
+                                f"Final Price per Unit: ${final_price:,.2f}"
+                            )
+                        if original_price and final_price:
+                            total_savings = (
+                                original_price - final_price
+                            ) * number_of_units
+                            deal_terms.append(f"Total Savings: ${total_savings:,.2f}")
+
+                        deal_terms_text = (
+                            "\n".join(deal_terms)
+                            if deal_terms
+                            else "Details to be confirmed in meeting"
+                        )
+
                         # Send confirmation email
-                        email_subject = "Deal Confirmation - BrewBot Espresso Machines"
+                        email_subject = f"Deal Confirmation - {product_name or 'BrewBot Espresso Machines'}"
                         email_body = f"""Dear Partner,
 
-We are pleased to confirm that we have reached an agreement regarding the BrewBot espresso machines.
+I am pleased to confirm that we have successfully reached an agreement regarding your BrewBot espresso machines order.
 
-Conversation Summary:
+AGREED TERMS:
+{deal_terms_text}
+
+CONVERSATION HIGHLIGHTS:
 {conversation_summary}
 
-We look forward to finalizing the details in our upcoming meeting.
+NEXT STEPS:
+A calendar invitation has been sent for our follow-up meeting to finalize the order details, delivery schedule, and payment terms. Please confirm your availability.
+
+I look forward to completing this transaction and establishing a successful partnership.
 
 Best regards,
-Lio (AI Negotiation Assistant)
+Lio
+AI Negotiation Assistant
 """
                         email_result = send_email(
                             to=vendor_email, subject=email_subject, message=email_body
@@ -1391,6 +1492,12 @@ Lio (AI Negotiation Assistant)
         )
 
 
+class BrewBotStreamRequest(BaseModel):
+    message: str
+    conversation_id: Optional[str] = None
+    voice_output_enabled: Optional[bool] = False
+
+
 @app.post("/chat/brewbot")
 async def chat_with_brewbot(request: BrewBotChatRequest):
     """
@@ -1425,6 +1532,73 @@ async def chat_with_brewbot(request: BrewBotChatRequest):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error sending message to BrewBot: {str(e)}"
+        )
+
+
+@app.post("/chat/brewbot/stream")
+async def chat_with_brewbot_stream(request: BrewBotStreamRequest):
+    """
+    Send a message to BrewBot with streaming support for text and voice.
+    Creates a new conversation if conversation_id is not provided.
+    """
+    try:
+
+        async def generate_stream():
+            try:
+                # Initialize or get existing conversation
+                external_agent = ExternalAPIAgent()
+                session_id = None
+
+                if (
+                    request.conversation_id
+                    and request.conversation_id in external_agent_conversations
+                ):
+                    # Use existing conversation
+                    external_agent.conversation_id = external_agent_conversations[
+                        request.conversation_id
+                    ]
+                    session_id = request.conversation_id
+                else:
+                    # Initialize new conversation
+                    await external_agent.initialize_conversation()
+                    # Generate a session ID for this conversation
+                    session_id = (
+                        request.conversation_id
+                        or f"brewbot_{datetime.now(timezone.utc).isoformat()}"
+                    )
+                    external_agent_conversations[session_id] = (
+                        external_agent.conversation_id
+                    )
+                    # Send conversation ID to frontend
+                    yield f"data: {json.dumps({'type': 'conversation_id', 'conversation_id': session_id})}\n\n"
+
+                # Send message and get response
+                response_text = await external_agent.send_message(request.message)
+
+                # Stream the response in chunks for real-time display
+                chunk_size = 10  # Characters per chunk
+                for i in range(0, len(response_text), chunk_size):
+                    chunk = response_text[i : i + chunk_size]
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                    await asyncio.sleep(0.05)  # Small delay for streaming effect
+
+                # If voice output is enabled, the frontend will handle TTS from the text response
+
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error streaming message to BrewBot: {str(e)}"
         )
 
 

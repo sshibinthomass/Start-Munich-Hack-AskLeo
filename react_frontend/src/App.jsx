@@ -35,6 +35,7 @@ export default function App() {
   const [agentToAgentEnabled, setAgentToAgentEnabled] = useState(false);
   const [agentToAgentLoading, setAgentToAgentLoading] = useState(false);
   const [brewBotConversationId, setBrewBotConversationId] = useState(null);
+  const [negotiateWithBrewBot, setNegotiateWithBrewBot] = useState(false);
   const [maxExchanges, setMaxExchanges] = useState(11);
   const [conversationMode, setConversationMode] = useState("until_deal"); // "fixed" or "until_deal"
   const [initialMessage, setInitialMessage] = useState("hello");
@@ -258,6 +259,7 @@ export default function App() {
     setToolCallHistory([]);
     setToolStatusComplete(true);
     setBrewBotConversationId(null); // Clear BrewBot conversation ID
+    // Note: Don't reset negotiateWithBrewBot toggle - let user control it
     try {
       const res = await fetch(`${BACKEND_URL}/chat/reset`, {
         method: "POST",
@@ -722,10 +724,10 @@ export default function App() {
     const trimmed = content.trim();
     if (!trimmed) return;
 
-    // Check if we should send to BrewBot (after agent-to-agent conversation)
-    // Priority: If BrewBot conversation exists, always send to BrewBot (not Lio)
-    if (brewBotConversationId) {
-      // Send message to BrewBot
+    // Check if we should send to BrewBot (toggle enabled or after agent-to-agent conversation)
+    // Priority: If negotiateWithBrewBot toggle is on OR BrewBot conversation exists, send to BrewBot
+    if (negotiateWithBrewBot || brewBotConversationId) {
+      // Send message to BrewBot (with streaming support)
       const userMessage = {
         text: trimmed,
         rendered: escapeHtml(trimmed),
@@ -733,6 +735,9 @@ export default function App() {
       };
       setConversation((prev) => [...prev, userMessage]);
       setLoading(true);
+      
+      // Reset text buffer for new response
+      textBufferRef.current = "";
 
       // Add empty bot message that we'll update
       setConversation((prev) => [
@@ -741,12 +746,14 @@ export default function App() {
       ]);
 
       try {
-        const response = await fetch(`${BACKEND_URL}/chat/brewbot`, {
+        // Use streaming endpoint for BrewBot negotiations
+        const response = await fetch(`${BACKEND_URL}/chat/brewbot/stream`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: trimmed,
-            conversation_id: brewBotConversationId,
+            conversation_id: brewBotConversationId || null, // Pass null if not set to initialize new conversation
+            voice_output_enabled: voiceOutputEnabled,
           }),
         });
 
@@ -755,27 +762,59 @@ export default function App() {
           throw new Error(errorText || "BrewBot backend returned an error.");
         }
 
-        const data = await response.json();
-        const brewBotResponse = data.response || "No response";
-        const rendered = renderMarkdown(brewBotResponse);
+        // Handle streaming response
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let fullResponse = "";
 
-        setConversation((prev) => {
-          const updated = [...prev];
-          const lastIndex = updated.length - 1;
-          if (lastIndex >= 0 && !updated[lastIndex].isUser) {
-            updated[lastIndex] = {
-              text: brewBotResponse,
-              rendered: `<strong>BrewBot:</strong> ${rendered}`,
-              isUser: false,
-              agent: "external_api",
-            };
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                
+                if (data.type === "chunk") {
+                  fullResponse += data.content;
+                  const rendered = renderMarkdown(fullResponse);
+                  setConversation((prev) => {
+                    const updated = [...prev];
+                    const lastIndex = updated.length - 1;
+                    if (lastIndex >= 0 && !updated[lastIndex].isUser) {
+                      updated[lastIndex] = {
+                        text: fullResponse,
+                        rendered: `<strong>BrewBot:</strong> ${rendered}`,
+                        isUser: false,
+                        agent: "external_api",
+                      };
+                    }
+                    return updated;
+                  });
+                  
+                  // Don't process chunks for TTS - we'll queue the full response at the end with the correct voice
+                } else if (data.type === "conversation_id" && data.conversation_id) {
+                  // Store conversation ID if provided (for new conversations)
+                  setBrewBotConversationId(data.conversation_id);
+                } else if (data.type === "error") {
+                  throw new Error(data.error || "BrewBot error");
+                }
+              } catch (err) {
+                console.error("Error parsing SSE data:", err);
+              }
+            }
           }
-          return updated;
-        });
+        }
 
-        // Queue audio if voice output is enabled
-        if (voiceOutputEnabled) {
-          await queueAudioForAgent(brewBotResponse, "external_api");
+        // Queue audio for the complete response with BrewBot's voice (only once)
+        if (voiceOutputEnabled && fullResponse) {
+          await queueAudioForAgent(fullResponse, "external_api");
         }
 
         setLoading(false);
@@ -928,6 +967,8 @@ export default function App() {
         toolStatusComplete={toolStatusComplete}
         backendUrl={BACKEND_URL}
         voiceOutputEnabled={voiceOutputEnabled}
+        negotiateWithBrewBot={negotiateWithBrewBot}
+        onNegotiateWithBrewBotToggle={setNegotiateWithBrewBot}
         onVoiceOutputToggle={handleVoiceOutputToggle}
         isAudioPlaying={isAudioPlaying}
         agentToAgentEnabled={agentToAgentEnabled}

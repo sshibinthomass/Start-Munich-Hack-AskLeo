@@ -359,6 +359,13 @@
   accent-color: #0066cc;
 }
 
+.floating-chat__settings-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #0066cc;
+}
+
 .floating-chat__settings-divider {
   height: 1px;
   background: rgba(226, 232, 240, 0.8);

@@ -38,13 +38,19 @@ class MCPChatbotNode:
     Handles tool calls by executing them and returning results.
     """
 
-    def __init__(self, model, tools: Optional[List[BaseTool]] = None):
+    def __init__(
+        self,
+        model,
+        tools: Optional[List[BaseTool]] = None,
+        custom_system_prompt: Optional[str] = None,
+    ):
         """
         Initialize the chatbot node with an LLM and optional tools.
 
         Args:
             model: The language model to use
             tools: Optional list of tools to bind to the LLM (from MCP servers, Tavily, etc.)
+            custom_system_prompt: Optional custom system prompt to use instead of default
         """
         self.llm = model
         # Initialize tools before loading additional ones to avoid attribute errors
@@ -55,6 +61,7 @@ class MCPChatbotNode:
             print(i.name)
         print("--------------------------------")
         self.tool_node = ToolNode(self.tools) if self.tools else None
+        self.custom_system_prompt = custom_system_prompt
 
         # Bind tools to LLM if provided (similar to graph.py)
         if self.tools:
@@ -92,8 +99,11 @@ class MCPChatbotNode:
         messages = list(state["messages"])
         # Add system prompt if tools are available and not already present
         if self.tools:
-            # Use the Scout system prompt when tools are available (like in graph.py)
-            system_prompt = get_scout_system_prompt()
+            # Use custom prompt if provided, otherwise use the Scout system prompt
+            if self.custom_system_prompt:
+                system_prompt = self.custom_system_prompt
+            else:
+                system_prompt = get_scout_system_prompt()
             # Prepend system message if not already present
             if not any(isinstance(msg, SystemMessage) for msg in messages):
                 messages = [SystemMessage(content=system_prompt)] + messages
