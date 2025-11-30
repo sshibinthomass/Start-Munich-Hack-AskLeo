@@ -17,9 +17,13 @@ export function ChatWindow({
   voiceOutputEnabled = false,
   onVoiceOutputToggle = null,
   isAudioPlaying = false,
+  inputRef = null,
+  defaultInputValue = "",
+  agentToAgentLoading = false,
 }) {
   const messagesEndRef = useRef(null);
-  const inputRef = useRef(null);
+  const internalInputRef = useRef(null);
+  const actualInputRef = inputRef || internalInputRef;
   const [showToolHistory, setShowToolHistory] = useState(false);
   const [expandedToolIndex, setExpandedToolIndex] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -36,8 +40,12 @@ export function ChatWindow({
   const isRecordingRef = useRef(false); // Use ref for reliable state checking in intervals
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+    actualInputRef.current?.focus();
+    // Set default value if provided
+    if (defaultInputValue && actualInputRef.current && !actualInputRef.current.value) {
+      actualInputRef.current.value = defaultInputValue;
+    }
+  }, [defaultInputValue]);
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -47,16 +55,16 @@ export function ChatWindow({
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    const content = inputRef.current?.value ?? "";
+    const content = actualInputRef.current?.value ?? "";
     if (!content.trim() || loading || resetting) return;
     onSubmit(content.trim());
-    inputRef.current.value = "";
-    inputRef.current.focus();
+    actualInputRef.current.value = "";
+    actualInputRef.current.focus();
   };
 
   const handleClear = () => {
     onClear();
-    inputRef.current?.focus();
+    actualInputRef.current?.focus();
   };
 
   useEffect(() => {
@@ -634,10 +642,10 @@ export function ChatWindow({
                 ? "Agent is speaking..."
                 : continuousMode
                 ? "Continuous mode: Speak naturally..."
-                : "Type your message…"
+                : defaultInputValue || "Type your message…"
             }
-            disabled={resetting || (isRecording && continuousMode) || isAudioPlaying}
-            ref={inputRef}
+            disabled={resetting || (isRecording && continuousMode) || isAudioPlaying || agentToAgentLoading}
+            ref={actualInputRef}
           />
           {onVoiceOutputToggle && (
             <button
@@ -798,7 +806,7 @@ export function ChatWindow({
           <button
             type="submit"
             className="chat-button"
-            disabled={loading || resetting || isRecording || isAudioPlaying}
+            disabled={loading || resetting || isRecording || isAudioPlaying || agentToAgentLoading}
             aria-label="Send message"
           >
             <svg

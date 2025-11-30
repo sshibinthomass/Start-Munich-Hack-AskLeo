@@ -168,6 +168,19 @@ export function ProductLanding() {
                     </span>
                   </div>
                   
+                  {version.images && version.images.length > 0 && (
+                    <div className="product-card__image-container">
+                      <img 
+                        src={`${BACKEND_URL}${version.images[0]}`} 
+                        alt={product.name}
+                        className="product-card__image"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  )}
+                  
                   <h3 className="product-card__name">{product.name}</h3>
                   <p className="product-card__brand">{product.brand}</p>
                   

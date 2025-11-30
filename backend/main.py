@@ -5,7 +5,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
@@ -40,6 +40,9 @@ from langgraph_agent.generic import (  # noqa: E402
     tool_status_stream,
 )
 from langgraph_agent.agent_communication import ExternalAPIAgent  # noqa: E402
+from langgraph_agent.tools.custom_tools import send_email, create_event  # noqa: E402
+from datetime import datetime, timedelta, timezone  # noqa: E402
+import re  # noqa: E402
 
 # Load environment variables
 load_dotenv()
@@ -176,6 +179,7 @@ class AgentToAgentRequest(BaseModel):
     selected_llm: Optional[str] = None
     max_exchanges: Optional[int] = 10
     conversation_mode: Optional[str] = "fixed"  # "fixed" or "until_deal"
+    initial_message: Optional[str] = "hello"
     voice_output_enabled: Optional[bool] = False
 
 
@@ -204,6 +208,18 @@ async def get_products():
         raise HTTPException(status_code=500, detail="Invalid product data format")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error loading products: {str(e)}")
+
+
+@app.get("/api/images/{image_name}")
+async def get_image(image_name: str):
+    """Serve product images from the data directory."""
+    try:
+        image_path = project_root / "data" / image_name
+        if not image_path.exists():
+            raise HTTPException(status_code=404, detail="Image not found")
+        return FileResponse(image_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error serving image: {str(e)}")
 
 
 @app.get("/health")
@@ -761,43 +777,106 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
                 await external_agent.initialize_conversation()
                 yield f"data: {json.dumps({'type': 'status', 'message': 'Dunkler agent initialized'})}\n\n"
 
-                # Start with MCP chatbot sending "hi"
-                initial_message = "hi"
+                # Start with MCP chatbot sending the initial message
+                initial_message = request.initial_message or "hello"
                 yield f"data: {json.dumps({'type': 'agent_message', 'agent': 'mcp_chatbot', 'message': initial_message})}\n\n"
 
-                # Helper function to check if a deal has been reached
-                def check_deal_reached(messages: List[str]) -> bool:
-                    """Check if messages indicate a deal has been reached."""
-                    deal_keywords = [
-                        "deal",
-                        "agreed",
-                        "accept",
-                        "accepted",
-                        "confirmed",
-                        "confirmation",
-                        "agreement",
-                        "settled",
-                        "finalized",
-                        "approved",
-                        "approved",
-                        "yes, let's proceed",
-                        "sounds good",
-                        "we have a deal",
-                        "deal is done",
-                        "i agree",
-                        "i accept",
-                        "confirmed",
-                        "let's finalize",
-                        "agreed upon",
-                    ]
-                    recent_messages = " ".join(
-                        messages[-4:]
-                    ).lower()  # Check last 4 messages
-                    keyword_count = sum(
-                        1 for keyword in deal_keywords if keyword in recent_messages
-                    )
-                    # If multiple deal keywords appear, likely a deal
-                    return keyword_count >= 2
+                # Helper function to check if a deal has been reached using Leo's judgment
+                async def check_deal_reached(
+                    messages: List[str], exchange_count: int = 0
+                ) -> bool:
+                    """Ask Leo to evaluate if a deal has been reached based on conversation."""
+                    # Force deal at 15 exchanges (max limit)
+                    if exchange_count >= 15:
+                        return True
+
+                    # Don't check too early (need at least 4 exchanges)
+                    if exchange_count < 4:
+                        return False
+
+                    # Only check every 2 exchanges to reduce API calls (but always check at 14+)
+                    if exchange_count < 14 and exchange_count % 2 != 0:
+                        return False
+
+                    try:
+                        # Create a summary of recent conversation (last 10 messages for better context)
+                        recent_messages = (
+                            messages[-10:] if len(messages) > 10 else messages
+                        )
+                        conversation_context = "\n".join(
+                            [
+                                f"Message {i + 1}: {msg[:200]}..."
+                                if len(msg) > 200
+                                else f"Message {i + 1}: {msg}"
+                                for i, msg in enumerate(recent_messages)
+                            ]
+                        )
+
+                        # Ask Leo to evaluate if a deal has been reached
+                        evaluation_prompt = f"""You are evaluating a negotiation conversation. Based on the following exchange, determine if both parties have reached a mutual agreement or deal.
+
+Important: A deal means BOTH parties have explicitly agreed to specific terms, prices, quantities, or conditions. Casual conversation, questions, or one-sided statements do NOT constitute a deal.
+
+Conversation:
+{conversation_context}
+
+Analyze this conversation carefully. Respond with ONLY one word: "YES" if a clear deal/agreement has been reached, or "NO" if not yet."""
+
+                        # Get Leo's evaluation using a separate session to avoid interfering with main conversation
+                        leo_evaluation = await get_mcp_chatbot_response(
+                            evaluation_prompt,
+                            f"{agent_session_id}_deal_check",
+                            provider,
+                            selected_llm,
+                            "mcp_chatbot",
+                        )
+
+                        # Check if Leo's response indicates a deal
+                        leo_response_lower = leo_evaluation.lower().strip()
+
+                        # Look for clear positive indicators
+                        if any(
+                            word in leo_response_lower
+                            for word in [
+                                "yes",
+                                "deal",
+                                "agreed",
+                                "agreement",
+                                "reached",
+                                "finalized",
+                            ]
+                        ):
+                            # Make sure it's not a negative statement
+                            if not any(
+                                word in leo_response_lower
+                                for word in [
+                                    "no deal",
+                                    "not agreed",
+                                    "not reached",
+                                    "no agreement",
+                                ]
+                            ):
+                                return True
+
+                        # If we're at 14+ exchanges, be more lenient - if Leo doesn't explicitly say no, consider it a deal
+                        if exchange_count >= 14:
+                            if "no" not in leo_response_lower or (
+                                "no" in leo_response_lower
+                                and "not" not in leo_response_lower
+                            ):
+                                # If response is ambiguous but we're at the limit, lean towards deal
+                                if (
+                                    len(leo_response_lower) < 50
+                                ):  # Short response might be "yes" or similar
+                                    return True
+
+                        return False
+                    except Exception as e:
+                        # If evaluation fails, fall back to forcing deal only at high exchange counts
+                        print(f"Error in deal evaluation: {e}")
+                        if exchange_count >= 14:
+                            return True  # Force deal at 14+ if evaluation fails
+                        return False
 
                 # Main conversation loop
                 # We want Dunkler (external_api) to always have the last message
@@ -806,7 +885,9 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
                 exchange_count = 0
                 conversation_messages = [initial_message]
                 deal_reached = False
-                max_iterations = 50  # Safety limit for until_deal mode
+                max_iterations = (
+                    15  # Aggressive limit: maximum 15 conversations for until_deal mode
+                )
 
                 while True:
                     # Check if we should continue
@@ -818,7 +899,9 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
                             yield f"data: {json.dumps({'type': 'status', 'message': 'Deal reached! Conversation ending.'})}\n\n"
                             break
                         if exchange_count >= max_iterations:
-                            yield f"data: {json.dumps({'type': 'status', 'message': 'Maximum iterations reached. Ending conversation.'})}\n\n"
+                            # Force a deal at max iterations
+                            deal_reached = True
+                            yield f"data: {json.dumps({'type': 'status', 'message': f'Maximum conversations ({max_iterations}) reached. Deal finalized.'})}\n\n"
                             break
                     # External API agent (Dunkler) responds to current message
                     try:
@@ -830,8 +913,11 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
 
                         # Check for deal in until_deal mode
                         if conversation_mode == "until_deal":
-                            deal_reached = check_deal_reached(conversation_messages)
+                            deal_reached = await check_deal_reached(
+                                conversation_messages, exchange_count
+                            )
                             if deal_reached:
+                                yield f"data: {json.dumps({'type': 'status', 'message': 'Leo has determined that a deal has been reached!'})}\n\n"
                                 break
                     except Exception as e:
                         yield f"data: {json.dumps({'type': 'error', 'agent': 'external_api', 'error': str(e)})}\n\n"
@@ -845,8 +931,17 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
 
                     # MCP chatbot (Leo) responds to external API's message
                     try:
+                        # Add urgency context if we're approaching the limit
+                        message_with_context = external_response
+                        if conversation_mode == "until_deal":
+                            remaining = max_iterations - exchange_count
+                            if remaining <= 3:
+                                message_with_context = f"[URGENT: Only {remaining} exchanges remaining. We must finalize the deal now.] {external_response}"
+                            elif remaining <= 6:
+                                message_with_context = f"[Time is running out: {remaining} exchanges left. Let's work towards closing the deal.] {external_response}"
+
                         mcp_response = await get_mcp_chatbot_response(
-                            external_response,
+                            message_with_context,
                             agent_session_id,
                             provider,
                             selected_llm,
@@ -858,8 +953,11 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
 
                         # Check for deal in until_deal mode
                         if conversation_mode == "until_deal":
-                            deal_reached = check_deal_reached(conversation_messages)
+                            deal_reached = await check_deal_reached(
+                                conversation_messages, exchange_count
+                            )
                             if deal_reached:
+                                yield f"data: {json.dumps({'type': 'status', 'message': 'Leo has determined that a deal has been reached!'})}\n\n"
                                 # Let Dunkler have the last word after deal is detected
                                 break
                     except Exception as e:
@@ -878,8 +976,84 @@ async def agent_to_agent_chat(request: AgentToAgentRequest):
                 session_store.pop(session_key, None)
                 clear_tool_status(session_key)
 
-                # Final message based on mode
+                # If deal is reached, send email and schedule meeting
                 if conversation_mode == "until_deal" and deal_reached:
+                    try:
+                        # Extract vendor email from conversation (look for email patterns)
+                        vendor_email = None
+                        email_pattern = (
+                            r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
+                        )
+                        for msg in conversation_messages:
+                            emails = re.findall(email_pattern, msg)
+                            if emails:
+                                vendor_email = emails[0]
+                                break
+
+                        # Use default vendor email if not found in conversation
+                        if not vendor_email:
+                            vendor_email = os.getenv(
+                                "VENDOR_EMAIL", "vendor@victoriaarduino.com"
+                            )
+
+                        # Create conversation summary (last 6 messages)
+                        summary_messages = (
+                            conversation_messages[-6:]
+                            if len(conversation_messages) > 6
+                            else conversation_messages
+                        )
+                        conversation_summary = "\n".join(
+                            [
+                                f"- {msg[:200]}..." if len(msg) > 200 else f"- {msg}"
+                                for msg in summary_messages
+                            ]
+                        )
+
+                        # Send confirmation email
+                        email_subject = (
+                            "Deal Confirmation - Victoria Arduino Espresso Machines"
+                        )
+                        email_body = f"""Dear Partner,
+
+We are pleased to confirm that we have reached an agreement regarding the Victoria Arduino espresso machines.
+
+Conversation Summary:
+{conversation_summary}
+
+We look forward to finalizing the details in our upcoming meeting.
+
+Best regards,
+Leo (AI Negotiation Assistant)
+"""
+                        email_result = send_email(
+                            to=vendor_email, subject=email_subject, message=email_body
+                        )
+                        yield f"data: {json.dumps({'type': 'status', 'message': f'Email sent: {email_result}'})}\n\n"
+
+                        # Schedule meeting for 2 days from now at 10:00 AM UTC
+                        meeting_date = datetime.now(timezone.utc) + timedelta(days=2)
+                        start_time = meeting_date.replace(
+                            hour=10, minute=0, second=0, microsecond=0
+                        )
+                        end_time = start_time + timedelta(hours=1)
+
+                        meeting_summary = "Deal Finalization Meeting - Victoria Arduino"
+                        meeting_description = f"Follow-up meeting to finalize the details of our agreement regarding Victoria Arduino espresso machines.\n\nConversation ID: {agent_session_id}"
+
+                        meeting_result = create_event(
+                            summary=meeting_summary,
+                            start_time=start_time.isoformat(),
+                            end_time=end_time.isoformat(),
+                            description=meeting_description,
+                            location="Virtual Meeting",
+                            attendees=vendor_email,
+                        )
+                        yield f"data: {json.dumps({'type': 'status', 'message': f'Meeting scheduled: {meeting_result}'})}\n\n"
+
+                    except Exception as e:
+                        # Don't fail the whole request if email/meeting fails
+                        yield f"data: {json.dumps({'type': 'status', 'message': f'Note: Could not send email/schedule meeting: {str(e)}'})}\n\n"
+
                     yield f"data: {json.dumps({'type': 'done', 'exchanges': exchange_count, 'conversation_id': agent_session_id, 'deal_reached': True})}\n\n"
                 else:
                     yield f"data: {json.dumps({'type': 'done', 'exchanges': exchange_count, 'conversation_id': agent_session_id, 'deal_reached': False})}\n\n"

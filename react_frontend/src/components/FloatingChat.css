@@ -358,6 +358,35 @@
   accent-color: #3b82f6;
 }
 
+.floating-chat__settings-divider {
+  height: 1px;
+  background: rgba(226, 232, 240, 0.8);
+  margin: 1.5rem 0;
+}
+
+.floating-chat__settings-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #1f2937;
+  background: white;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  margin-bottom: 0.5rem;
+}
+
+.floating-chat__settings-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.floating-chat__settings-input::placeholder {
+  color: #94a3b8;
+}
+
 .floating-chat__clear {
   background: rgba(255, 255, 255, 0.2);
   border: none;

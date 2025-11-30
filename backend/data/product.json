@@ -38,10 +38,7 @@
           "bodyMaterial": "Steelux stainless steel",
           "energySaving": true
         },
-        "images": [
-          "https://example.com/images/maverick-black-1.jpg",
-          "https://example.com/images/maverick-black-2.jpg"
-        ]
+        "images": ["/api/images/img1.png"]
       }
     ]
   },
@@ -81,10 +78,7 @@
           "dimensions": "950mm x 620mm x 520mm",
           "weight": "72kg"
         },
-        "images": [
-          "https://example.com/images/eagle-tempo-black-1.jpg",
-          "https://example.com/images/eagle-tempo-black-2.jpg"
-        ]
+        "images": ["/api/images/img2.png"]
       }
     ]
   },
@@ -123,10 +117,7 @@
           "dimensions": "411mm x 510mm x 510mm",
           "weight": "37kg"
         },
-        "images": [
-          "https://example.com/images/e1-prima-white-1.jpg",
-          "https://example.com/images/e1-prima-white-2.jpg"
-        ]
+        "images": ["/api/images/img3.png"]
       }
     ]
   }

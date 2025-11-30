@@ -37,6 +37,7 @@ export default function App() {
   const [dunklerConversationId, setDunklerConversationId] = useState(null);
   const [maxExchanges, setMaxExchanges] = useState(11);
   const [conversationMode, setConversationMode] = useState("fixed"); // "fixed" or "until_deal"
+  const [initialMessage, setInitialMessage] = useState("hello");
 
   const normalizeToolEntry = (entry) => {
     if (!entry) return null;
@@ -460,7 +461,7 @@ export default function App() {
   };
 
   // Handler for agent-to-agent toggle
-  const handleAgentToAgentToggle = async () => {
+  const handleAgentToAgentToggle = async (customInitialMessage = null) => {
     if (agentToAgentEnabled) {
       // Disable agent-to-agent mode (but keep conversation ID for continued chat)
       setAgentToAgentEnabled(false);
@@ -469,6 +470,10 @@ export default function App() {
       // Don't clear dunklerConversationId - user can continue chatting
       return;
     }
+
+    // Get the initial message from the input or use the provided one
+    // We'll get this from the FloatingChat component via a callback
+    const messageToUse = customInitialMessage || initialMessage || "hello";
 
     // Enable agent-to-agent mode and start conversation
     setAgentToAgentEnabled(true);
@@ -492,6 +497,7 @@ export default function App() {
           selected_llm: model,
           max_exchanges: conversationMode === "fixed" ? maxExchanges : null,
           conversation_mode: conversationMode,
+          initial_message: messageToUse,
           voice_output_enabled: voiceOutputEnabled,
         }),
       });
@@ -809,6 +815,8 @@ export default function App() {
         onMaxExchangesChange={setMaxExchanges}
         conversationMode={conversationMode}
         onConversationModeChange={setConversationMode}
+        initialMessage={initialMessage}
+        onInitialMessageChange={setInitialMessage}
       />
     </div>
   );

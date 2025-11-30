@@ -24,6 +24,8 @@ export function FloatingChat({
   onMaxExchangesChange,
   conversationMode,
   onConversationModeChange,
+  initialMessage,
+  onInitialMessageChange,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -31,6 +33,7 @@ export function FloatingChat({
   const [expandedToolIndex, setExpandedToolIndex] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const settingsRef = useRef(null);
+  const chatInputRef = useRef(null);
 
   // Close settings when clicking outside (handled by overlay onClick)
   // Also close on Escape key
@@ -186,6 +189,22 @@ export function FloatingChat({
                   The conversation will continue until Leo and Dunkler reach an agreement or deal.
                 </p>
               )}
+
+              <div className="floating-chat__settings-divider"></div>
+              
+              <label className="floating-chat__settings-label">
+                Initial Message
+              </label>
+              <input
+                type="text"
+                value={initialMessage}
+                onChange={(e) => onInitialMessageChange(e.target.value)}
+                className="floating-chat__settings-input"
+                placeholder="Enter initial message..."
+              />
+              <p className="floating-chat__settings-note">
+                This message will be sent by Leo to start the conversation with Dunkler.
+              </p>
             </div>
           </div>
         </div>
@@ -228,7 +247,15 @@ export function FloatingChat({
               <button
                 type="button"
                 className={`floating-chat__agent-toggle ${agentToAgentEnabled ? "floating-chat__agent-toggle--active" : ""}`}
-                onClick={onAgentToAgentToggle}
+                onClick={() => {
+                  // Get the current input value before toggling
+                  const inputValue = chatInputRef.current?.value?.trim() || initialMessage || "hello";
+                  // Clear the input after getting the value
+                  if (chatInputRef.current) {
+                    chatInputRef.current.value = "";
+                  }
+                  onAgentToAgentToggle(inputValue);
+                }}
                 disabled={loading || resetting || agentToAgentLoading}
                 title={agentToAgentEnabled ? "Disable agent-to-agent chat" : "Enable agent-to-agent chat"}
                 aria-label={agentToAgentEnabled ? "Disable agent-to-agent chat" : "Enable agent-to-agent chat"}
@@ -355,6 +382,9 @@ export function FloatingChat({
                 voiceOutputEnabled={voiceOutputEnabled}
                 onVoiceOutputToggle={onVoiceOutputToggle}
                 isAudioPlaying={isAudioPlaying}
+                inputRef={chatInputRef}
+                defaultInputValue={!agentToAgentEnabled && conversation.length === 0 ? (initialMessage || "hello") : ""}
+                agentToAgentLoading={agentToAgentLoading}
               />
             </div>
           )}
