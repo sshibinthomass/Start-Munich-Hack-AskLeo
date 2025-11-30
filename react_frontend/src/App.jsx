@@ -38,8 +38,43 @@ export default function App() {
   const [maxExchanges, setMaxExchanges] = useState(11);
   const [conversationMode, setConversationMode] = useState("fixed"); // "fixed" or "until_deal"
   const [initialMessage, setInitialMessage] = useState("hello");
+
+  // Download report function
+  const downloadReport = async (conversationId) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/download-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversationId }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate report");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `SmartSavings_Report_${conversationId.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      setError(`Error downloading report: ${err.message}`);
+    }
+  };
+
+  // Make downloadReport available globally for inline onclick
+  useEffect(() => {
+    window.downloadReport = downloadReport;
+    return () => {
+      delete window.downloadReport;
+    };
+  }, []);
   const [personalityTraits, setPersonalityTraits] = useState("Calm, composed, persuasive, and highly strategic");
-  const [negotiationStrategy, setNegotiationStrategy] = useState("Start with a smaller order and request a justified discount");
+  const [negotiationStrategy, setNegotiationStrategy] = useState("Negotiate step by step and don't directly agree from price try multiple discounts");
   const [selectedProduct, setSelectedProduct] = useState("Maverick");
   const [availableProducts, setAvailableProducts] = useState([]);
   const [numberOfUnits, setNumberOfUnits] = useState(5);
@@ -605,9 +640,31 @@ export default function App() {
                 const errorMsg = data.error || "Unknown error occurred";
                 setError(`Error from ${data.agent || "system"}: ${errorMsg}`);
                 setAgentToAgentLoading(false);
+              } else if (data.type === "dead_end") {
+                // Handle dead-end (deadlock) scenario
+                const deadEndMessage = data.message || "Negotiation has reached an impasse.";
+                const reason = data.reason || "Both parties cannot agree on terms.";
+                
+                setConversation((prev) => [
+                  ...prev,
+                  {
+                    text: `⚠️ Negotiation Dead-End Detected\n\n${deadEndMessage}\n\nReason: ${reason}\n\nThe conversation has been stopped. Please review the negotiation and consider adjusting your parameters or strategy.`,
+                    rendered: `<div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 8px; margin: 0.5rem 0;">
+                      <strong style="color: #92400e;">⚠️ Negotiation Dead-End Detected</strong>
+                      <p style="margin: 0.5rem 0; color: #78350f;">${escapeHtml(deadEndMessage)}</p>
+                      <p style="margin: 0.5rem 0 0 0; color: #78350f;"><strong>Reason:</strong> ${escapeHtml(reason)}</p>
+                      <p style="margin: 0.5rem 0 0 0; color: #78350f; font-size: 0.9rem;">The conversation has been stopped. Please review the negotiation and consider adjusting your parameters or strategy.</p>
+                    </div>`,
+                    isUser: false,
+                    agent: "system",
+                  },
+                ]);
+                setAgentToAgentLoading(false);
               } else if (data.type === "done") {
                 const completionMessage = data.deal_reached
                   ? `Deal reached after ${data.exchanges || 0} exchanges! You can now continue chatting with BrewBot.`
+                  : data.dead_end
+                  ? `Negotiation ended due to dead-end after ${data.exchanges || 0} exchanges. You can now continue negotiating with BrewBot yourself.`
                   : `Conversation completed after ${data.exchanges || 0} exchanges. You can now continue chatting with BrewBot.`;
                 
                 setConversation((prev) => [
@@ -618,10 +675,30 @@ export default function App() {
                     isUser: false,
                     agent: "system",
                   },
+                  // Add download button if deal was reached
+                  ...(data.deal_reached && data.conversation_id
+                    ? [
+                        {
+                          text: "Download SmartSavings Report",
+                          rendered: `<div style="margin: 1rem 0;">
+                            <button 
+                              onclick="window.downloadReport('${data.conversation_id}')" 
+                              style="background-color: #0066cc; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 0.875rem; font-weight: 500;"
+                              onmouseover="this.style.backgroundColor='#0052a3'"
+                              onmouseout="this.style.backgroundColor='#0066cc'"
+                            >
+                              📥 Download SmartSavings Report (PDF)
+                            </button>
+                          </div>`,
+                          isUser: false,
+                          agent: "system",
+                        },
+                      ]
+                    : []),
                 ]);
                 setAgentToAgentLoading(false);
-                // Store conversation ID for continued chat with BrewBot
-                if (data.conversation_id) {
+                // Store conversation ID for continued chat with BrewBot (if deal was reached or dead-end occurred)
+                if (data.conversation_id && (data.deal_reached || data.dead_end)) {
                   setBrewBotConversationId(data.conversation_id);
                 }
               }

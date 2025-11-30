@@ -44,6 +44,35 @@ from langgraph_agent.tools.custom_tools import send_email, create_event  # noqa:
 from datetime import datetime, timedelta, timezone  # noqa: E402
 import re  # noqa: E402
 
+try:
+    from io import BytesIO  # noqa: E402
+    from reportlab.lib.pagesizes import letter, A4  # noqa: E402
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle  # noqa: E402
+    from reportlab.lib.units import inch  # noqa: E402
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Paragraph,
+        Spacer,
+        Table,
+        TableStyle,
+        PageBreak,
+    )  # noqa: E402
+    from reportlab.lib import colors  # noqa: E402
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT  # noqa: E402
+
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+    BytesIO = None
+    SimpleDocTemplate = None
+    Paragraph = None
+    Spacer = None
+    Table = None
+    TableStyle = None
+    PageBreak = None
+    colors = None
+    TA_CENTER = None
+
 # Load environment variables
 load_dotenv()
 
@@ -55,6 +84,8 @@ mcp_tools = None
 session_store: Dict[str, List] = {}
 # Store external agent conversation IDs: session_id -> conversation_id
 external_agent_conversations: Dict[str, str] = {}
+# Store deal information for PDF generation: conversation_id -> deal_data
+deal_storage: Dict[str, Dict] = {}
 
 
 async def load_mcp_tools():
@@ -926,6 +957,119 @@ Respond with ONLY one word: "YES" if a clear deal/agreement has been reached wit
                             return True  # Force deal at 14+ if evaluation fails
                         return False
 
+                # Helper function to check if negotiation has reached a dead-end
+                async def check_dead_end(
+                    messages: List[str], exchange_count: int = 0
+                ) -> tuple[bool, str]:
+                    """
+                    Ask Lio to evaluate if the negotiation has reached a dead-end.
+                    Returns (is_dead_end: bool, reason: str)
+                    """
+                    # Don't check too early (need at least 6 exchanges to detect patterns)
+                    if exchange_count < 6:
+                        return False, ""
+
+                    # Check every 3 exchanges after exchange 6 to detect deadlocks
+                    if exchange_count < 12 and exchange_count % 3 != 0:
+                        return False, ""
+
+                    try:
+                        # Create a summary of recent conversation (last 8-10 messages for better context)
+                        recent_messages = (
+                            messages[-10:] if len(messages) > 10 else messages
+                        )
+                        conversation_context = "\n".join(
+                            [
+                                f"Message {i + 1}: {msg[:200]}..."
+                                if len(msg) > 200
+                                else f"Message {i + 1}: {msg}"
+                                for i, msg in enumerate(recent_messages)
+                            ]
+                        )
+
+                        # Ask Lio to evaluate if there's a dead-end
+                        dead_end_prompt = f"""You are evaluating a negotiation conversation to detect if it has reached a dead-end (deadlock) where both parties cannot agree.
+
+A dead-end occurs when:
+1. Both parties keep repeating the same offers without progress
+2. Multiple rejections without meaningful counter-proposals
+3. No movement on discount percentages (stuck at same values)
+4. Circular arguments with no resolution
+5. Both parties are unwilling to compromise further
+6. The negotiation has stalled with no path forward
+
+Conversation:
+{conversation_context}
+
+Analyze this conversation carefully. Determine if:
+- Both parties are stuck and cannot reach an agreement
+- The negotiation has reached an impasse
+- There's no reasonable path forward to a deal
+
+Respond in this EXACT format:
+- If dead-end detected: "YES: [brief reason why]"
+- If negotiation can continue: "NO"
+
+Examples:
+- "YES: Both parties stuck at 15% vs 20% discount, no progress for 4 exchanges"
+- "YES: Repeated rejections without counter-proposals, negotiation stalled"
+- "NO: Still negotiating, progress being made"
+- "NO: Parties are making counter-offers and moving towards agreement"
+
+Your response:"""
+
+                        # Get Lio's evaluation using a separate session
+                        lio_evaluation = await get_mcp_chatbot_response(
+                            dead_end_prompt,
+                            f"{agent_session_id}_dead_end_check",
+                            provider,
+                            selected_llm,
+                            "mcp_chatbot",
+                            personality_traits=personality_traits,
+                            negotiation_strategy=negotiation_strategy,
+                            product_name=product_name,
+                            number_of_units=number_of_units,
+                            min_discount=min_discount,
+                            max_discount=max_discount,
+                        )
+
+                        # Parse Lio's response
+                        lio_response_lower = lio_evaluation.lower().strip()
+
+                        # Check if response indicates a dead-end
+                        if lio_response_lower.startswith("yes:"):
+                            # Extract the reason
+                            reason = (
+                                lio_evaluation.split(":", 1)[1].strip()
+                                if ":" in lio_evaluation
+                                else "Negotiation has reached an impasse with no path forward."
+                            )
+                            return True, reason
+                        elif "yes" in lio_response_lower and any(
+                            keyword in lio_response_lower
+                            for keyword in [
+                                "dead",
+                                "stuck",
+                                "impasse",
+                                "cannot agree",
+                                "no progress",
+                                "stalled",
+                            ]
+                        ):
+                            # If it says yes with dead-end keywords, extract reason if available
+                            if ":" in lio_evaluation:
+                                reason = lio_evaluation.split(":", 1)[1].strip()
+                            else:
+                                reason = "Negotiation has reached an impasse with no path forward."
+                            return True, reason
+
+                        return False, ""
+
+                    except Exception as e:
+                        # If evaluation fails, don't trigger dead-end (let conversation continue)
+                        print(f"Error in dead-end evaluation: {e}")
+                        return False, ""
+
                 # Main conversation loop
                 # We want BrewBot (external_api) to always have the last message
                 # So we do pairs of exchanges: BrewBot -> Lio, and ensure we end with BrewBot
@@ -966,6 +1110,25 @@ Respond with ONLY one word: "YES" if a clear deal/agreement has been reached wit
                             )
                             if deal_reached:
                                 yield f"data: {json.dumps({'type': 'status', 'message': 'Lio has determined that a deal has been reached!'})}\n\n"
+                                break
+
+                            # Check for dead-end (deadlock) in until_deal mode
+                            is_dead_end, dead_end_reason = await check_dead_end(
+                                conversation_messages, exchange_count
+                            )
+                            if is_dead_end:
+                                # Store conversation ID for continued chat with BrewBot
+                                external_agent_conversations[agent_session_id] = (
+                                    external_agent.conversation_id
+                                )
+
+                                reason_message = (
+                                    f"Negotiation dead-end detected: {dead_end_reason}"
+                                    if dead_end_reason
+                                    else "Negotiation has reached an impasse with no path forward."
+                                )
+                                yield f"data: {json.dumps({'type': 'dead_end', 'message': reason_message, 'reason': dead_end_reason or 'No agreement possible'})}\n\n"
+                                yield f"data: {json.dumps({'type': 'done', 'exchanges': exchange_count, 'conversation_id': agent_session_id, 'deal_reached': False, 'dead_end': True})}\n\n"
                                 break
                     except Exception as e:
                         yield f"data: {json.dumps({'type': 'error', 'agent': 'external_api', 'error': str(e)})}\n\n"
@@ -1112,6 +1275,93 @@ Lio (AI Negotiation Assistant)
                         # Don't fail the whole request if email/meeting fails
                         yield f"data: {json.dumps({'type': 'status', 'message': f'Note: Could not send email/schedule meeting: {str(e)}'})}\n\n"
 
+                    # Store deal information for PDF generation
+                    try:
+                        # Extract negotiated price and discount from conversation
+                        negotiated_price = None
+                        negotiated_discount = None
+                        original_price = None
+
+                        # Ensure conversation_messages is a list of strings
+                        conversation_strings = []
+                        for msg in conversation_messages:
+                            if isinstance(msg, str):
+                                conversation_strings.append(msg)
+                            else:
+                                conversation_strings.append(str(msg))
+
+                        # Try to extract price/discount from conversation
+                        for msg in conversation_strings:
+                            # Look for discount percentages
+                            discount_match = re.search(r"(\d+(?:\.\d+)?)\s*%", msg)
+                            if discount_match:
+                                try:
+                                    disc_value = float(discount_match.group(1))
+                                    if (
+                                        not negotiated_discount
+                                        or disc_value < negotiated_discount
+                                    ):
+                                        negotiated_discount = disc_value
+                                except (ValueError, AttributeError):
+                                    pass
+
+                            # Look for price mentions
+                            price_match = re.search(
+                                r"\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", msg
+                            )
+                            if price_match:
+                                try:
+                                    price_str = price_match.group(1).replace(",", "")
+                                    price_value = float(price_str)
+                                    if (
+                                        not negotiated_price
+                                        or price_value < negotiated_price
+                                    ):
+                                        negotiated_price = price_value
+                                except (ValueError, AttributeError):
+                                    pass
+
+                        # Get original price from product data
+                        try:
+                            with open(project_root / "data" / "product.json", "r") as f:
+                                products = json.load(f)
+                                for product in products:
+                                    if product.get("name") == product_name:
+                                        for version in product.get("versions", []):
+                                            original_price = version.get("price")
+                                            break
+                                        break
+                        except Exception:
+                            pass
+
+                        # Store deal data
+                        deal_storage[agent_session_id] = {
+                            "conversation": conversation_strings,
+                            "conversation_id": agent_session_id,
+                            "product_name": product_name or "Unknown Product",
+                            "number_of_units": number_of_units or 1,
+                            "min_discount": min_discount or 5.0,
+                            "max_discount": max_discount or 20.0,
+                            "personality_traits": personality_traits or [],
+                            "negotiation_strategy": negotiation_strategy or [],
+                            "exchanges": exchange_count,
+                            "negotiated_price": negotiated_price,
+                            "negotiated_discount": negotiated_discount,
+                            "original_price": original_price,
+                            "email_sent": "email_result" in locals() and email_result,
+                            "calendar_scheduled": "meeting_result" in locals()
+                            and meeting_result,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                        print(
+                            f"Deal information stored for conversation_id: {agent_session_id}"
+                        )
+                    except Exception as e:
+                        import traceback
+
+                        print(f"Error storing deal information: {e}")
+                        print(traceback.format_exc())
+
                     yield f"data: {json.dumps({'type': 'done', 'exchanges': exchange_count, 'conversation_id': agent_session_id, 'deal_reached': True})}\n\n"
                 else:
                     yield f"data: {json.dumps({'type': 'done', 'exchanges': exchange_count, 'conversation_id': agent_session_id, 'deal_reached': False})}\n\n"
@@ -1178,6 +1428,341 @@ async def chat_with_brewbot(request: BrewBotChatRequest):
 
 class TTSRequest(BaseModel):
     text: str
+
+
+class DownloadReportRequest(BaseModel):
+    conversation_id: str
+
+
+def calculate_smart_savings_metrics(deal_data: Dict) -> Dict:
+    """Calculate all SmartSavings metrics from deal data."""
+    original_price = deal_data.get("original_price", 0)
+    negotiated_price = deal_data.get("negotiated_price", 0)
+    negotiated_discount = deal_data.get("negotiated_discount", 0)
+    number_of_units = deal_data.get("number_of_units", 1)
+
+    # Default assumptions
+    profit_per_cup = 1.0  # $1 per cup
+    cups_per_day = 500
+    machine_lifetime_years = 5
+    profit_per_cup_roi = 0.30  # $0.30 for ROI calculation
+
+    # Calculate metrics
+    total_original_price = original_price * number_of_units if original_price else 0
+    total_negotiated_price = (
+        negotiated_price * number_of_units if negotiated_price else 0
+    )
+
+    # 1. Absolute Savings
+    absolute_savings = (
+        total_original_price - total_negotiated_price
+        if total_original_price and total_negotiated_price
+        else 0
+    )
+
+    # 2. Final Discount (%)
+    if total_original_price > 0:
+        final_discount = (absolute_savings / total_original_price) * 100
+    else:
+        final_discount = negotiated_discount if negotiated_discount else 0
+
+    # 3. Break-Even Time
+    daily_profit = profit_per_cup * cups_per_day
+    if daily_profit > 0 and total_negotiated_price > 0:
+        break_even_days = total_negotiated_price / daily_profit
+    else:
+        break_even_days = 0
+
+    # 4. ROI (1, 3, 5 years)
+    annual_profit = cups_per_day * profit_per_cup_roi * 365
+    roi_year_1 = (
+        (annual_profit * 1) - total_negotiated_price if total_negotiated_price else 0
+    )
+    roi_year_3 = (
+        (annual_profit * 3) - total_negotiated_price if total_negotiated_price else 0
+    )
+    roi_year_5 = (
+        (annual_profit * 5) - total_negotiated_price if total_negotiated_price else 0
+    )
+
+    # 5. Cost Per Cup (Lifetime)
+    total_cups = cups_per_day * 365 * machine_lifetime_years
+    cost_per_cup = total_negotiated_price / total_cups if total_cups > 0 else 0
+
+    # 6. Competitor Price Difference (using minPrice as competitor)
+    competitor_price = None
+    try:
+        with open(project_root / "data" / "product.json", "r") as f:
+            products = json.load(f)
+            for product in products:
+                if product.get("name") == deal_data.get("product_name"):
+                    for version in product.get("versions", []):
+                        competitor_price = version.get("minPrice", version.get("price"))
+                        break
+                    break
+    except Exception:
+        pass
+
+    competitor_difference = 0
+    percent_cheaper = 0
+    if competitor_price and total_negotiated_price:
+        competitor_total = competitor_price * number_of_units
+        competitor_difference = competitor_total - total_negotiated_price
+        if competitor_total > 0:
+            percent_cheaper = (
+                (competitor_total - total_negotiated_price) / competitor_total
+            ) * 100
+
+    # 7. Value-Added Perks (extract from conversation)
+    perks = []
+    conversation_text = " ".join(deal_data.get("conversation", []))
+    perk_keywords = [
+        "warranty",
+        "installation",
+        "training",
+        "free",
+        "included",
+        "bonus",
+        "extra",
+    ]
+    for keyword in perk_keywords:
+        if keyword.lower() in conversation_text.lower():
+            # Try to extract the perk context
+            idx = conversation_text.lower().find(keyword.lower())
+            if idx >= 0:
+                snippet = conversation_text[max(0, idx - 50) : idx + 100]
+                perks.append(snippet.strip())
+
+    return {
+        "absolute_savings": absolute_savings,
+        "final_discount": final_discount,
+        "break_even_days": break_even_days,
+        "roi_year_1": roi_year_1,
+        "roi_year_3": roi_year_3,
+        "roi_year_5": roi_year_5,
+        "cost_per_cup": cost_per_cup,
+        "competitor_difference": competitor_difference,
+        "percent_cheaper": percent_cheaper,
+        "value_added_perks": perks[:3] if perks else ["Standard package included"],
+        "total_original_price": total_original_price,
+        "total_negotiated_price": total_negotiated_price,
+        "number_of_units": number_of_units,
+    }
+
+
+@app.post("/download-report")
+async def download_report(request: DownloadReportRequest):
+    """Generate and download a PDF report for a completed deal."""
+    if not REPORTLAB_AVAILABLE:
+        raise HTTPException(
+            status_code=500,
+            detail="ReportLab library is not installed. Please install it with: pip install reportlab",
+        )
+    try:
+        print(
+            f"Download report requested for conversation_id: {request.conversation_id}"
+        )
+        print(
+            f"Available conversation IDs in deal_storage: {list(deal_storage.keys())}"
+        )
+
+        if request.conversation_id not in deal_storage:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Deal information not found for conversation_id: {request.conversation_id}. Available IDs: {list(deal_storage.keys())[:5]}",
+            )
+
+        deal_data = deal_storage[request.conversation_id]
+        print(f"Deal data retrieved: {list(deal_data.keys())}")
+
+        # Validate deal_data has required fields
+        if not deal_data.get("conversation"):
+            deal_data["conversation"] = ["No conversation history available"]
+
+        metrics = calculate_smart_savings_metrics(deal_data)
+        print(f"Metrics calculated successfully")
+
+        # Use LLM to format the report content
+        conversation_summary = (
+            chr(10).join(deal_data.get("conversation", [])[:20])
+            if deal_data.get("conversation")
+            else "No conversation available"
+        )
+
+        report_prompt = f"""Create a professional SmartSavings Report for a coffee machine negotiation.
+
+DEAL INFORMATION:
+- Product: {deal_data.get("product_name", "N/A")}
+- Units: {deal_data.get("number_of_units", "N/A")}
+- Original Price: ${metrics.get("total_original_price", 0):,.2f}
+- Negotiated Price: ${metrics.get("total_negotiated_price", 0):,.2f}
+- Discount: {metrics.get("final_discount", 0):.2f}%
+
+SMART SAVINGS METRICS:
+1. Absolute Savings: ${metrics.get("absolute_savings", 0):,.2f}
+2. Final Discount: {metrics.get("final_discount", 0):.2f}%
+3. Break-Even Time: {metrics.get("break_even_days", 0):.1f} days
+4. 1-Year ROI: ${metrics.get("roi_year_1", 0):,.2f}
+5. 3-Year ROI: ${metrics.get("roi_year_3", 0):,.2f}
+6. 5-Year ROI: ${metrics.get("roi_year_5", 0):,.2f}
+7. Cost Per Cup: ${metrics.get("cost_per_cup", 0):.4f}
+8. Competitor Savings: ${metrics.get("competitor_difference", 0):,.2f} ({metrics.get("percent_cheaper", 0):.2f}% cheaper)
+9. Value-Added Perks: {", ".join(metrics.get("value_added_perks", []))}
+
+CONVERSATION SUMMARY:
+{conversation_summary}
+
+Create a well-structured, professional report with:
+- Executive Summary
+- Detailed Metrics Section
+- Conversation Highlights
+- Recommendations
+
+Format it as clear, professional text suitable for a PDF document."""
+
+        # Get LLM-formatted report
+        try:
+            provider = "groq"
+            selected_llm = "openai/gpt-oss-20b"
+            formatted_report = await get_mcp_chatbot_response(
+                report_prompt,
+                f"{request.conversation_id}_report",
+                provider,
+                selected_llm,
+                "mcp_chatbot",
+            )
+            print("LLM report generated successfully")
+        except Exception as e:
+            print(f"Error generating LLM report: {e}")
+            # Fallback to a simple formatted report
+            formatted_report = f"""Executive Summary:
+This report summarizes the negotiation for {deal_data.get("product_name", "coffee machines")} with {deal_data.get("number_of_units", "N/A")} units.
+
+Key Achievements:
+- Total Savings: ${metrics.get("absolute_savings", 0):,.2f}
+- Discount Achieved: {metrics.get("final_discount", 0):.2f}%
+- Break-Even Period: {metrics.get("break_even_days", 0):.1f} days
+
+Recommendations:
+Based on the metrics, this negotiation has resulted in significant cost savings and a favorable return on investment."""
+
+        # Generate PDF
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, pagesize=letter, topMargin=0.5 * inch, bottomMargin=0.5 * inch
+        )
+        story = []
+
+        # Styles
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            "CustomTitle",
+            parent=styles["Heading1"],
+            fontSize=24,
+            textColor=colors.HexColor("#0066cc"),
+            spaceAfter=30,
+            alignment=TA_CENTER,
+        )
+        heading_style = ParagraphStyle(
+            "CustomHeading",
+            parent=styles["Heading2"],
+            fontSize=16,
+            textColor=colors.HexColor("#0066cc"),
+            spaceAfter=12,
+        )
+
+        # Title
+        story.append(Paragraph("SmartSavings Negotiation Report", title_style))
+        story.append(Spacer(1, 0.3 * inch))
+
+        # Executive Summary
+        story.append(Paragraph("Executive Summary", heading_style))
+        story.append(
+            Paragraph(
+                f"<b>Product:</b> {deal_data.get('product_name', 'N/A')}",
+                styles["Normal"],
+            )
+        )
+        story.append(
+            Paragraph(
+                f"<b>Units:</b> {deal_data.get('number_of_units', 'N/A')}",
+                styles["Normal"],
+            )
+        )
+        story.append(
+            Paragraph(
+                f"<b>Date:</b> {datetime.fromisoformat(deal_data.get('timestamp', datetime.now().isoformat())).strftime('%B %d, %Y')}",
+                styles["Normal"],
+            )
+        )
+        story.append(Spacer(1, 0.2 * inch))
+
+        # Key Metrics Table
+        story.append(Paragraph("Key Metrics", heading_style))
+        metrics_data = [
+            ["Metric", "Value"],
+            ["Absolute Savings", f"${metrics.get('absolute_savings', 0):,.2f}"],
+            ["Final Discount", f"{metrics.get('final_discount', 0):.2f}%"],
+            ["Break-Even Time", f"{metrics.get('break_even_days', 0):.1f} days"],
+            ["Cost Per Cup (Lifetime)", f"${metrics.get('cost_per_cup', 0):.4f}"],
+            ["1-Year ROI", f"${metrics.get('roi_year_1', 0):,.2f}"],
+            ["3-Year ROI", f"${metrics.get('roi_year_3', 0):,.2f}"],
+            ["5-Year ROI", f"${metrics.get('roi_year_5', 0):,.2f}"],
+        ]
+        metrics_table = Table(metrics_data, colWidths=[3 * inch, 2 * inch])
+        metrics_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0066cc")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 12),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                ]
+            )
+        )
+        story.append(metrics_table)
+        story.append(Spacer(1, 0.3 * inch))
+
+        # Formatted Report Content
+        story.append(Paragraph("Detailed Analysis", heading_style))
+        for line in formatted_report.split("\n"):
+            if line.strip():
+                story.append(Paragraph(line.strip(), styles["Normal"]))
+                story.append(Spacer(1, 0.1 * inch))
+
+        story.append(PageBreak())
+
+        # Conversation Log
+        story.append(Paragraph("Full Conversation Log", heading_style))
+        for i, msg in enumerate(deal_data.get("conversation", []), 1):
+            story.append(
+                Paragraph(f"<b>Message {i}:</b> {msg[:500]}...", styles["Normal"])
+            )
+            story.append(Spacer(1, 0.1 * inch))
+
+        # Build PDF
+        doc.build(story)
+        buffer.seek(0)
+
+        # Return PDF as download
+        return StreamingResponse(
+            BytesIO(buffer.read()),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=SmartSavings_Report_{request.conversation_id[:8]}.pdf"
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error generating report: {str(e)}"
+        )
     voice_id: Optional[str] = "21m00Tcm4TlvDq8ikWAM"  # Default: Rachel voice
     model_id: Optional[str] = "eleven_turbo_v2_5"  # Fast model for streaming
     stability: Optional[float] = 0.5
